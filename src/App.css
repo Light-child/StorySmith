@@ -1,0 +1,150 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   App.css — StorySmith Global Styles & Theme System
+   ─────────────────────────────────────────────────────────────────────────────
+   All colours are driven by CSS custom properties (variables).
+   Switching themes is as simple as: document.documentElement.setAttribute('data-theme','forest')
+   Each theme overrides only the colour variables — layout & typography stay constant.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Google Font ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Space+Mono:wght@400;700&display=swap');
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* DEFAULT THEME  (dark, red accent — matches your mockups)                   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+:root,
+[data-theme="default"] {
+  /* Background layers */
+  --bg-base: #141414;       /* outermost background */
+  --bg-surface: #1c1c1c;    /* panels, sidebar */
+  --bg-elevated: #242424;   /* cards, inputs */
+  --bg-hover: #2c2c2c;      /* hover states */
+
+  /* Accent */
+  --accent: #ef4444;         /* primary red */
+  --accent-dim: rgba(239, 68, 68, 0.15);
+  --accent-glow: rgba(239, 68, 68, 0.35);
+
+  /* Text */
+  --text-primary: #f0f0f0;
+  --text-secondary: #888;
+  --text-muted: #555;
+
+  /* Borders */
+  --border: rgba(255,255,255,0.07);
+  --border-accent: var(--accent);
+
+  /* Sidebar glow (the red strip in your design) */
+  --sidebar-glow: 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.15);
+
+  /* Card */
+  --card-border: rgba(239, 68, 68, 0.5);
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.4);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #333;
+  --scrollbar-track: transparent;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+
+  /* Fonts */
+  --font-display: 'Crimson Pro', Georgia, serif;
+  --font-mono: 'Space Mono', monospace;
+  --font-body: 'Crimson Pro', Georgia, serif;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* FOREST THEME                                                                */
+/* ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="forest"] {
+  --bg-base: #0d1a12;
+  --bg-surface: #132019;
+  --bg-elevated: #1a2d22;
+  --bg-hover: #223d2c;
+  --accent: #4caf7d;
+  --accent-dim: rgba(76, 175, 125, 0.15);
+  --accent-glow: rgba(76, 175, 125, 0.35);
+  --text-primary: #dff0e8;
+  --text-secondary: #7aab8e;
+  --text-muted: #4a6b57;
+  --border: rgba(76,175,125,0.1);
+  --sidebar-glow: 0 0 30px rgba(76, 175, 125, 0.4), 0 0 60px rgba(76, 175, 125, 0.15);
+  --card-border: rgba(76, 175, 125, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* OCEAN THEME                                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="ocean"] {
+  --bg-base: #0a1628;
+  --bg-surface: #0f1e3a;
+  --bg-elevated: #162847;
+  --bg-hover: #1e3560;
+  --accent: #4a9eff;
+  --accent-dim: rgba(74, 158, 255, 0.15);
+  --accent-glow: rgba(74, 158, 255, 0.35);
+  --text-primary: #d0e8ff;
+  --text-secondary: #6a9ec8;
+  --text-muted: #3a6080;
+  --border: rgba(74,158,255,0.1);
+  --sidebar-glow: 0 0 30px rgba(74, 158, 255, 0.4), 0 0 60px rgba(74, 158, 255, 0.15);
+  --card-border: rgba(74, 158, 255, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* PARCHMENT THEME (light)                                                     */
+/* ─────────────────────────────────────────────────────────────────────────── */
+[data-theme="parchment"] {
+  --bg-base: #f5f0e8;
+  --bg-surface: #ede6d8;
+  --bg-elevated: #fff8ee;
+  --bg-hover: #e8dfc8;
+  --accent: #8b4513;
+  --accent-dim: rgba(139, 69, 19, 0.12);
+  --accent-glow: rgba(139, 69, 19, 0.3);
+  --text-primary: #2c1a0e;
+  --text-secondary: #7a5c3e;
+  --text-muted: #b0906c;
+  --border: rgba(139,69,19,0.15);
+  --sidebar-glow: 0 0 30px rgba(139, 69, 19, 0.3), 0 0 60px rgba(139, 69, 19, 0.1);
+  --card-border: rgba(139, 69, 19, 0.4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* GLOBAL RESET & BASE                                                         */
+/* ─────────────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden; /* The app is a fixed-size shell — internal panes scroll */
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────*/
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+/* ─── Selection ─────────────────────────────────────────────────────────────*/
+::selection { background: var(--accent-dim); color: var(--text-primary); }
+
+/* ─── Utility: visually hidden (accessible) ─────────────────────────────────*/
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

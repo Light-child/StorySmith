@@ -1,0 +1,24 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   WorkSpace.module.css
+   Three-column shell: Sidebar | Content | ActionDock
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.root {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-base);
+  overflow: hidden;
+  position: relative;
+}
+
+/* The centre content area fills remaining horizontal space */
+.content {
+  flex: 1;
+  overflow: hidden;        /* children handle their own scroll */
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  /* Subtle left separator */
+  border-left: 1px solid var(--border);
+}

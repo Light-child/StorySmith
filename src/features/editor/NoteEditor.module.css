@@ -1,0 +1,168 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   NoteEditor.module.css
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Root container — fills available space */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ── Formatting toolbar ───────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* Individual toolbar button */
+.toolBtn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  letter-spacing: 0.03em;
+}
+.toolBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+/* Active state = that format is applied at cursor position */
+.toolBtnActive {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+/* Note title label in the toolbar */
+.noteTitle {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* ── Editor content area ──────────────────────────────────────────────────── */
+.editorContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 48px 80px;
+}
+
+/* TipTap injects a .ProseMirror element — style it here */
+.editorContent :global(.ProseMirror) {
+  min-height: 100%;
+  outline: none;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.85;
+  color: var(--text-primary);
+  caret-color: var(--accent);
+}
+
+/* Placeholder text */
+.editorContent :global(.ProseMirror p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  pointer-events: none;
+  float: left;
+  height: 0;
+  font-style: italic;
+}
+
+/* Headings */
+.editorContent :global(.ProseMirror h1) {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 1.4em 0 0.4em;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+.editorContent :global(.ProseMirror h2) {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 1.2em 0 0.3em;
+}
+
+/* Paragraphs */
+.editorContent :global(.ProseMirror p) {
+  margin: 0.5em 0;
+}
+
+/* Lists */
+.editorContent :global(.ProseMirror ul),
+.editorContent :global(.ProseMirror ol) {
+  padding-left: 1.8em;
+  margin: 0.5em 0;
+}
+.editorContent :global(.ProseMirror li) {
+  margin: 0.25em 0;
+}
+
+/* Code blocks */
+.editorContent :global(.ProseMirror pre) {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+.editorContent :global(.ProseMirror code) {
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+/* Horizontal rule */
+.editorContent :global(.ProseMirror hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+
+/* Blockquote */
+.editorContent :global(.ProseMirror blockquote) {
+  border-left: 3px solid var(--accent);
+  padding-left: 1.2em;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 1em 0;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────────── */
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 1rem;
+  font-family: var(--font-display);
+}

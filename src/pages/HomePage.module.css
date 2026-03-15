@@ -1,0 +1,252 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   HomePage.module.css
+   Layout: fixed sidebar on the left, scrollable card grid on the right.
+   All colours come from CSS variables defined in App.css.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Root shell ───────────────────────────────────────────────────────────── */
+.root {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.sidebar {
+  position: relative;                 /* needed for the absolute glow strip    */
+  width: 260px;
+  min-width: 220px;
+  background: var(--bg-surface);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10;
+  /* Subtle inner shadow on the right edge */
+  box-shadow: inset -1px 0 0 var(--border);
+}
+
+/* The glowing red strip on the right edge of the sidebar */
+.sidebarGlow {
+  position: absolute;
+  top: 10%;
+  right: -2px;
+  width: 4px;
+  height: 80%;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: var(--sidebar-glow);
+  pointer-events: none;
+}
+
+/* ── Sidebar nav items ────────────────────────────────────────────────────── */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 24px;
+}
+
+.navItem {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  font-weight: 400;
+  text-align: left;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  letter-spacing: 0.01em;
+}
+
+.navItem:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Active nav item gets the accent border treatment */
+.navItemActive {
+  color: var(--text-primary);
+  border: 1.5px solid var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ── Main content area ────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  position: relative;
+  padding: 40px 48px;
+  overflow-y: auto;
+}
+
+/* ── Search button (floating top-right) ──────────────────────────────────── */
+.searchBtn {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px var(--accent-glow);
+  transition: transform 0.2s, box-shadow 0.2s;
+  z-index: 100;
+}
+
+.searchBtn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 28px var(--accent-glow);
+}
+
+/* Inline search input that appears below the search button */
+.searchInput {
+  position: fixed;
+  top: 92px;
+  right: 24px;
+  width: 280px;
+  padding: 12px 18px;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  outline: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 100;
+  animation: slideDown 0.15s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Card grid ────────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  /* Responsive: columns are at least 200px, max 260px */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
+  gap: 24px;
+  padding-top: 16px;
+}
+
+/* ── Canvas card ──────────────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--card-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow);
+  border-color: var(--accent);
+}
+
+/* Coloured thumbnail block at the top of each card */
+.cardThumb {
+  width: 100%;
+  height: 140px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.cardBody {
+  padding: 14px 16px 18px;
+}
+
+.cardName {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  /* Clamp long names to one line */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardMeta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
+/* Delete button shown on hover */
+.deleteBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.deleteBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Create New Canvas card ───────────────────────────────────────────────── */
+.createCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 2px dashed var(--card-border);
+  border-radius: var(--radius-md);
+  min-height: 220px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+
+.createCard:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  transform: translateY(-4px);
+}
+
+.createIcon {
+  font-size: 2.5rem;
+  color: var(--accent);
+  line-height: 1;
+  font-weight: 300;
+}
+
+.createLabel {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}

@@ -1,0 +1,53 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   ActionDock.module.css
+   A floating vertical pill anchored to the right edge of the viewport.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* The pill container */
+.dock {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  z-index: 200;
+}
+
+/* Individual icon button */
+.btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+}
+
+.btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Active view button gets the accent colour + subtle glow */
+.btnActive {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+.btnActive:hover {
+  background: var(--accent);
+  color: #fff;
+}

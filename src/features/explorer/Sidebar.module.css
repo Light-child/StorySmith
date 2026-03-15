@@ -1,0 +1,180 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Sidebar.module.css — Explorer panel for the Workspace view
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.root {
+  position: relative;
+  width: 240px;
+  min-width: 200px;
+  height: 100vh;
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0 20px;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  overflow: hidden;
+  z-index: 10;
+}
+
+/* Glowing accent strip on the right border of the sidebar */
+.glowStrip {
+  position: absolute;
+  top: 10%;
+  right: -2px;
+  width: 4px;
+  height: 80%;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: var(--sidebar-glow);
+  pointer-events: none;
+}
+
+/* ── Back button ──────────────────────────────────────────────────────────── */
+.backBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-align: left;
+  padding: 4px 24px 16px;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.backBtn:hover { color: var(--accent); }
+
+/* ── Canvas title ─────────────────────────────────────────────────────────── */
+.canvasTitle {
+  padding: 0 24px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.canvasTitleText {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: text;
+  display: block;
+}
+
+/* ── Section block (Notes / MindMaps) ────────────────────────────────────── */
+.section {
+  padding: 16px 0 8px;
+  flex-shrink: 0;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 8px;
+}
+
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.addBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+  line-height: 1;
+}
+.addBtn:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ── Item list ────────────────────────────────────────────────────────────── */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 4px 12px;
+  font-style: italic;
+}
+
+/* ── Individual explorer item ─────────────────────────────────────────────── */
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 36px;
+}
+.item:hover {
+  background: var(--bg-hover);
+}
+
+/* Active = currently open in the editor */
+.itemActive {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+}
+
+.itemLabel {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.itemActive .itemLabel {
+  color: var(--text-primary);
+}
+
+/* Delete ✕ button — hidden until item is hovered */
+.itemDelete {
+  background: none;
+  border: none;
+  color: transparent;
+  font-size: 0.65rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.item:hover .itemDelete {
+  color: var(--text-muted);
+}
+.itemDelete:hover {
+  color: var(--accent) !important;
+  background: var(--accent-dim);
+}
+
+/* ── Inline rename input ──────────────────────────────────────────────────── */
+.inlineInput {
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  padding: 2px 6px;
+  width: 100%;
+  outline: none;
+}

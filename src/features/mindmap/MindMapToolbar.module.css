@@ -1,0 +1,186 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   MindMapToolbar.module.css
+   A single trigger button + dropdown menu in the top-left of the canvas.
+   Uses StorySmith CSS variables so it respects the active theme.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Wrapper — anchors the dropdown to the button ───────────────────────── */
+.wrapper {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  left: unset;
+  z-index: 10;
+
+  /* Establishes a positioning context for the dropdown */
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* ── Trigger button ──────────────────────────────────────────────────────── */
+.triggerBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 9px 16px;
+
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+
+  /* Prevent React Flow from treating clicks as canvas interactions */
+  pointer-events: all;
+}
+
+.triggerBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+/* Active state — when dropdown is open, button gets accent treatment */
+.triggerBtnOpen {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+/* ── Plus / × icon ───────────────────────────────────────────────────────── */
+.plusIcon {
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+/* Rotate 45° to become a × when the menu is open */
+.plusIconOpen {
+  transform: rotate(45deg);
+  color: var(--accent);
+}
+
+/* ── Dropdown panel ──────────────────────────────────────────────────────── */
+.dropdown {
+  /* Sits directly below the trigger button */
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  left: unset;
+
+  min-width: 160px;
+  padding: 6px;
+
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+
+  /* Slide + fade in */
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Dropdown item ───────────────────────────────────────────────────────── */
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  width: 100%;
+  padding: 9px 12px;
+
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-align: left;
+
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.dropdownItem:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Node shape icons (pure CSS) ─────────────────────────────────────────── */
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  opacity: 0.75;
+}
+
+.iconEllipse {
+  width: 18px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.iconCircle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.iconRect {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+/* Table: CSS grid lines via gradient */
+.iconTable {
+  width: 14px;
+  height: 12px;
+  border-radius: 2px;
+  background-image:
+    linear-gradient(to bottom, currentColor 1px, transparent 1px),
+    linear-gradient(to right,  currentColor 1px, transparent 1px);
+  background-size: 100% 6px, 7px 100%;
+  opacity: 0.5;
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+/* ── File action items ───────────────────────────────────────────────────── */
+.fileItem {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.fileItem:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Hide the actual file input — the <label> acts as the button */
+.hiddenInput {
+  display: none;
+}

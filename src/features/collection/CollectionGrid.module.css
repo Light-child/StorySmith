@@ -1,0 +1,85 @@
+/* CollectionGrid.module.css — shared grid styles used by the collection */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
+  gap: 24px;
+}
+
+.card {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--card-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow);
+}
+
+.thumb {
+  width: 100%;
+  height: 130px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.info { padding: 14px 16px 18px; }
+
+.name {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+
+.meta {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 3px;
+}
+
+.del {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.card:hover .del { opacity: 1; }
+.del:hover { background: var(--accent); color: #fff; }
+
+/* Create card */
+.createCard {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  background: var(--bg-elevated);
+  border: 2px dashed var(--card-border);
+  border-radius: var(--radius-md);
+  min-height: 210px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+.createCard:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  transform: translateY(-4px);
+}
+.plus { font-size: 2.5rem; color: var(--accent); line-height: 1; }
+.createLabel { font-size: 0.85rem; color: var(--text-secondary); font-family: var(--font-mono); }
