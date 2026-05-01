@@ -1,110 +1,120 @@
 /**
  * useStore.js — StorySmith Global State (Zustand)
  * ────────────────────────────────────────────────
- * The shape of this store is identical to before.
- * The only change is that all DB calls are now awaited —
- * PouchDB is async (Promise-based) whereas sql.js was synchronous.
+ * D-NODE ADDITIONS:
+ *   - dNodes          — all D-node records (global, not per-canvas)
+ *   - dNodeMindMaps   — all D-node mindmaps (global, not per-canvas)
+ *   - dnodePanelOpen  — whether the D-node picker panel is visible
  *
- * Everything else in the app (components, hooks) stays exactly the same
- * because they only ever talk to this store, never to db.js directly.
+ *   Actions added:
+ *     loadDNodes()
+ *     createDNode(name, hostMindmapId)
+ *     registerDNodeInMindmap(dnodeNodeId, hostMindmapId)
+ *     unregisterDNodeFromMindmap(dnodeNodeId, hostMindmapId)
+ *     renameDNode(dnodeNodeId, newName)
+ *     removeDNodeMindmap(dnodeNodeId)
+ *     openDNodePanel() / closeDNodePanel()
+ *     selectDNodeMindMap(mindmapId)   — navigate into a D-node mindmap
  */
 
 import { create } from "zustand";
 import {
-  getAllCanvases,
-  createCanvas,
-  updateCanvasName,
-  deleteCanvas,
-  getNotesForCanvas,
-  createNote,
-  saveNote,
-  deleteNote,
-  getMindMapsForCanvas,
-  createMindMap,
-  saveMindMap,
-  deleteMindMap,
+  // Canvas
+  getAllCanvases, createCanvas, updateCanvasName, deleteCanvas,
+  // Notes
+  getNotesForCanvas, createNote, saveNote, deleteNote,
+  // MindMaps
+  getMindMapsForCanvas, createMindMap, saveMindMap, deleteMindMap,
+  // D-Nodes
+  getAllDNodes, getAllDNodeMindMaps,
+  createDNode       as dbCreateDNode,
+  registerDNodeInMindmap  as dbRegisterDNode,
+  unregisterDNodeFromMindmap as dbUnregisterDNode,
+  renameDNode       as dbRenameDNode,
+  deleteDNodeMindmap as dbDeleteDNodeMindmap,
+  getMindMap,
 } from "../features/Database/db";
 
 const useStore = create((set, get) => ({
-  // ─── Canvas State ──────────────────────────────────────────────────────────
-  canvases: [],
-  activeCanvasId: null,
 
-  // ─── Content State ─────────────────────────────────────────────────────────
-  notes: [],
-  mindmaps: [],
-  activeNoteId: null,
+  // ─── Canvas ──────────────────────────────────────────────────────────────
+  canvases:        [],
+  activeCanvasId:  null,
+
+  // ─── Content (per active canvas) ─────────────────────────────────────────
+  notes:           [],
+  mindmaps:        [],       // regular mindmaps only
+  activeNoteId:    null,
   activeMindMapId: null,
 
-  // ─── Workspace View ────────────────────────────────────────────────────────
-  activeView: "note", // "note" | "mindmap"
+  // ─── D-Nodes (global) ────────────────────────────────────────────────────
+  dNodes:          [],       // all D-node records (nodes table)
+  dNodeMindMaps:   [],       // all D-node mindmaps (is_dnode: true)
+  dnodePanelOpen:  false,    // D-node picker panel visibility
 
-  // ─── Theme ─────────────────────────────────────────────────────────────────
-  theme: "default",
+  // ─── Workspace view ──────────────────────────────────────────────────────
+  activeView:      "note",   // "note" | "mindmap"
+
+  // ─── Theme ───────────────────────────────────────────────────────────────
+  theme:           "default",
 
   // ───────────────────────────────────────────────────────────────────────────
   // CANVAS ACTIONS
   // ───────────────────────────────────────────────────────────────────────────
 
-  /** Load all canvases from PouchDB into Zustand state */
   loadCanvases: async () => {
     const canvases = await getAllCanvases();
     set({ canvases });
   },
 
-  /** Create a canvas and immediately select it */
   addCanvas: async (name) => {
     const canvas = await createCanvas(name);
-    set((state) => ({
-      canvases: [canvas, ...state.canvases],
-      activeCanvasId: canvas.id,
-      notes: [],
-      mindmaps: [],
-      activeNoteId: null,
+    set((s) => ({
+      canvases:        [canvas, ...s.canvases],
+      activeCanvasId:  canvas.id,
+      notes:           [],
+      mindmaps:        [],
+      activeNoteId:    null,
       activeMindMapId: null,
     }));
     return canvas;
   },
 
-  /** Switch active canvas and load its notes + mindmaps */
   selectCanvas: async (id) => {
     const [notes, mindmaps] = await Promise.all([
       getNotesForCanvas(id),
       getMindMapsForCanvas(id),
     ]);
     set({
-      activeCanvasId: id,
+      activeCanvasId:  id,
       notes,
       mindmaps,
-      activeNoteId: notes[0]?.note_id || null,
+      activeNoteId:    notes[0]?.note_id    || null,
       activeMindMapId: mindmaps[0]?.mindmap_id || null,
-      activeView: notes.length > 0 ? "note" : mindmaps.length > 0 ? "mindmap" : "note",
+      activeView: notes.length > 0 ? "note" : "mindmap",
     });
   },
 
-  /** Rename a canvas */
   renameCanvas: async (id, name) => {
     await updateCanvasName(id, name);
-    set((state) => ({
-      canvases: state.canvases.map((c) => (c.id === id ? { ...c, name } : c)),
+    set((s) => ({
+      canvases: s.canvases.map((c) => c.id === id ? { ...c, name } : c),
     }));
   },
 
-  /** Delete a canvas and all its children */
   removeCanvas: async (id) => {
     await deleteCanvas(id);
-    set((state) => {
-      const canvases = state.canvases.filter((c) => c.id !== id);
+    set((s) => {
+      const canvases = s.canvases.filter((c) => c.id !== id);
       return {
         canvases,
-        activeCanvasId: canvases[0]?.id || null,
-        notes: [],
-        mindmaps: [],
-        activeNoteId: null,
+        activeCanvasId:  canvases[0]?.id || null,
+        notes:           [],
+        mindmaps:        [],
+        activeNoteId:    null,
         activeMindMapId: null,
       };
     });
-    // If a new canvas is now active, load its content
     const newId = get().activeCanvasId;
     if (newId) get().selectCanvas(newId);
   },
@@ -113,109 +123,209 @@ const useStore = create((set, get) => ({
   // NOTE ACTIONS
   // ───────────────────────────────────────────────────────────────────────────
 
-  /** Create a note in the active canvas */
   addNote: async (name) => {
     const { activeCanvasId } = get();
     if (!activeCanvasId) return;
     const note = await createNote(activeCanvasId, name);
-    set((state) => ({
-      notes: [note, ...state.notes],
+    set((s) => ({
+      notes:        [note, ...s.notes],
       activeNoteId: note.note_id,
-      activeView: "note",
+      activeView:   "note",
     }));
     return note;
   },
 
-  /** Switch the active note */
-  selectNote: (noteId) => {
-    set({ activeNoteId: noteId, activeView: "note" });
-  },
+  selectNote: (noteId) => set({ activeNoteId: noteId, activeView: "note" }),
 
-  /**
-   * Persist note content to PouchDB and update the in-memory notes array.
-   * @param {string} noteId
-   * @param {object} tiptapJson — editor.getJSON() result (a real JS object)
-   * @param {string} [name]     — optional rename
-   */
   persistNote: async (noteId, tiptapJson, name) => {
     await saveNote(noteId, tiptapJson, name);
     const ts = new Date().toISOString();
-    set((state) => ({
-      notes: state.notes.map((n) =>
+    set((s) => ({
+      notes: s.notes.map((n) =>
         n.note_id === noteId
-          ? {
-              ...n,
-              essence: tiptapJson,                    // object, not a string
-              note_name: name ?? n.note_name,
-              date_last_modified: ts,
-            }
+          ? { ...n, essence: tiptapJson, note_name: name ?? n.note_name, date_last_modified: ts }
           : n
       ),
     }));
   },
 
-  /** Delete a note */
   removeNote: async (noteId) => {
     await deleteNote(noteId);
-    set((state) => {
-      const notes = state.notes.filter((n) => n.note_id !== noteId);
+    set((s) => {
+      const notes = s.notes.filter((n) => n.note_id !== noteId);
       return { notes, activeNoteId: notes[0]?.note_id || null };
     });
   },
 
   // ───────────────────────────────────────────────────────────────────────────
-  // MINDMAP ACTIONS
+  // MINDMAP ACTIONS (regular)
   // ───────────────────────────────────────────────────────────────────────────
 
-  /** Create a mindmap in the active canvas */
   addMindMap: async (name) => {
     const { activeCanvasId } = get();
     if (!activeCanvasId) return;
     const mm = await createMindMap(activeCanvasId, name);
-    set((state) => ({
-      mindmaps: [mm, ...state.mindmaps],
+    set((s) => ({
+      mindmaps:        [mm, ...s.mindmaps],
       activeMindMapId: mm.mindmap_id,
-      activeView: "mindmap",
+      activeView:      "mindmap",
     }));
     return mm;
   },
 
-  /** Switch the active mindmap */
   selectMindMap: (mindmapId) => {
     set({ activeMindMapId: mindmapId, activeView: "mindmap" });
   },
 
-  /**
-   * Persist mindmap content to PouchDB and update in-memory state.
-   * @param {string} mindmapId
-   * @param {{ nodes: object[], edges: object[] }} rfJson — React Flow state
-   * @param {string} [name]
-   */
   persistMindMap: async (mindmapId, rfJson, name) => {
     await saveMindMap(mindmapId, rfJson, name);
     const ts = new Date().toISOString();
-    set((state) => ({
-      mindmaps: state.mindmaps.map((m) =>
+    set((s) => ({
+      mindmaps: s.mindmaps.map((m) =>
         m.mindmap_id === mindmapId
-          ? {
-              ...m,
-              essence: rfJson,                        // object, not a string
-              mindmap_name: name ?? m.mindmap_name,
-              date_last_modified: ts,
-            }
+          ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
+          : m
+      ),
+      // Also update dNodeMindMaps if this is a D-node mindmap
+      dNodeMindMaps: s.dNodeMindMaps.map((m) =>
+        m.mindmap_id === mindmapId
+          ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
           : m
       ),
     }));
   },
 
-  /** Delete a mindmap */
   removeMindMap: async (mindmapId) => {
     await deleteMindMap(mindmapId);
-    set((state) => {
-      const mindmaps = state.mindmaps.filter((m) => m.mindmap_id !== mindmapId);
+    set((s) => {
+      const mindmaps = s.mindmaps.filter((m) => m.mindmap_id !== mindmapId);
       return { mindmaps, activeMindMapId: mindmaps[0]?.mindmap_id || null };
     });
   },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // D-NODE ACTIONS
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * loadDNodes — fetch all D-node records and D-node mindmaps from PouchDB.
+   * Call once on app start alongside loadCanvases.
+   */
+  loadDNodes: async () => {
+    const [dNodes, dNodeMindMaps] = await Promise.all([
+      getAllDNodes(),
+      getAllDNodeMindMaps(),
+    ]);
+    set({ dNodes, dNodeMindMaps });
+  },
+
+  /**
+   * addDNode — creates a new D-node (or registers an existing one in a mindmap).
+   *
+   * @param {string} name          — the D-node's global name
+   * @param {string} hostMindmapId — the mindmap it's being placed into
+   * @returns {{ nodeRecord, mindmap }} — the created/updated records
+   */
+  addDNode: async (name, hostMindmapId) => {
+    const result = await dbCreateDNode(name, hostMindmapId);
+    const { nodeRecord, mindmap } = result;
+
+    set((s) => {
+      // If this D-node already existed, update existing records
+      const existingNode = s.dNodes.find((d) => d.node_id === nodeRecord.node_id);
+      const existingMM   = s.dNodeMindMaps.find((m) => m.mindmap_id === mindmap.mindmap_id);
+
+      return {
+        dNodes: existingNode
+          ? s.dNodes.map((d) => d.node_id === nodeRecord.node_id ? nodeRecord : d)
+          : [...s.dNodes, nodeRecord],
+        dNodeMindMaps: existingMM
+          ? s.dNodeMindMaps.map((m) => m.mindmap_id === mindmap.mindmap_id ? mindmap : m)
+          : [...s.dNodeMindMaps, mindmap],
+      };
+    });
+
+    return result;
+  },
+
+  /**
+   * registerDNodeInMindmap — call when an existing D-node is placed into
+   * a new mindmap (e.g. dragged from the D-node panel).
+   */
+  registerDNodeInMindmap: async (dnodeNodeId, hostMindmapId) => {
+    const result = await dbRegisterDNode(dnodeNodeId, hostMindmapId);
+    // Refresh the D-node record in store
+    set((s) => ({
+      dNodes: s.dNodes.map((d) =>
+        d.node_id === dnodeNodeId ? result.nodeRecord : d
+      ),
+    }));
+    return result;
+  },
+
+  /**
+   * unregisterDNodeFromMindmap — call when a D-node instance is deleted
+   * from a mindmap.
+   */
+  unregisterDNodeFromMindmap: async (dnodeNodeId, hostMindmapId) => {
+    await dbUnregisterDNode(dnodeNodeId, hostMindmapId);
+    // Refresh the updated node record
+    const [dNodes, dNodeMindMaps] = await Promise.all([
+      getAllDNodes(),
+      getAllDNodeMindMaps(),
+    ]);
+    set({ dNodes, dNodeMindMaps });
+  },
+
+  /**
+   * renameDNode — renames a D-node globally.
+   * Updates node record, mindmap name, and identity node label.
+   */
+  renameDNode: async (dnodeNodeId, newName) => {
+    await dbRenameDNode(dnodeNodeId, newName);
+    // Reload to get fresh state
+    const [dNodes, dNodeMindMaps] = await Promise.all([
+      getAllDNodes(),
+      getAllDNodeMindMaps(),
+    ]);
+    set({ dNodes, dNodeMindMaps });
+  },
+
+  /**
+   * removeDNodeMindmap — deletes a D-node and its mindmap.
+   * Converts all instances in host mindmaps back to regular ellipse nodes.
+   */
+  removeDNodeMindmap: async (dnodeNodeId) => {
+    await dbDeleteDNodeMindmap(dnodeNodeId);
+    set((s) => ({
+      dNodes:       s.dNodes.filter((d) => d.node_id !== dnodeNodeId),
+      dNodeMindMaps: s.dNodeMindMaps.filter(
+        (m) => !s.dNodes.find(
+          (d) => d.node_id === dnodeNodeId && d.mind_map_id === m.mindmap_id
+        )
+      ),
+      // If the deleted D-node mindmap was active, clear it
+      activeMindMapId: s.activeMindMapId === s.dNodes.find(
+        (d) => d.node_id === dnodeNodeId
+      )?.mind_map_id
+        ? null
+        : s.activeMindMapId,
+    }));
+  },
+
+  /**
+   * selectDNodeMindMap — navigate into a D-node's mindmap.
+   * Sets it as the active mindmap and switches to mindmap view.
+   * The D-node mindmap is loaded from the dNodeMindMaps array
+   * (not the regular mindmaps array) since it's canvas-independent.
+   */
+  selectDNodeMindMap: (mindmapId) => {
+    set({ activeMindMapId: mindmapId, activeView: "mindmap" });
+  },
+
+  // ── D-node panel ──────────────────────────────────────────────────────────
+  openDNodePanel:  () => set({ dnodePanelOpen: true }),
+  closeDNodePanel: () => set({ dnodePanelOpen: false }),
 
   // ───────────────────────────────────────────────────────────────────────────
   // UI ACTIONS

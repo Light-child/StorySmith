@@ -1,66 +1,35 @@
 /**
  * db.js — StorySmith Database Layer (PouchDB)
  * ─────────────────────────────────────────────
- * WHY POUCHDB:
- *   PouchDB is a fully embedded, document-oriented database that runs directly
- *   inside your app — no server process, no daemon, no native dependencies.
- *   It stores data locally using IndexedDB in the WebView (which Tauri provides).
- *   When you're ready to add cloud sync or move to a hosted backend, you point
- *   it at a CouchDB-compatible server and call db.sync() — one line of code.
+ * Document prefixes:
+ *   "canvas::<uuid>"   → Canvas
+ *   "note::<uuid>"     → Note
+ *   "mindmap::<uuid>"  → MindMap (regular OR D-node mindmap)
+ *   "node::<uuid>"     → D-node record
  *
- * HOW DOCUMENTS ARE STRUCTURED:
- *   PouchDB stores JSON documents. Every document needs two special fields:
- *     _id  — the unique identifier (we set this ourselves, e.g. "canvas::uuid")
- *     _rev — a revision string PouchDB manages automatically for conflict tracking
+ * D-NODE DESIGN:
+ *   A D-node is a globally unique, name-keyed entity. Its name IS its identity —
+ *   there can never be two D-node records with the same name.
  *
- *   We prefix every _id with the document type so we can fetch all documents of
- *   a given type efficiently using PouchDB's allDocs() range query:
- *     "canvas::<uuid>"   → a Canvas document
- *     "note::<uuid>"     → a Note document
- *     "mindmap::<uuid>"  → a MindMap document
- *     "node::<uuid>"     → a Node document
+ *   D-node mindmaps are regular mindmap documents with two extra fields:
+ *     is_dnode: true          — marks it as a D-node mindmap
+ *     canvas_id: null         — D-node mindmaps are not owned by any canvas
  *
- * IMPORTANT — ALL FUNCTIONS ARE ASYNC:
- *   Unlike the previous sql.js version (which was synchronous), every PouchDB
- *   operation returns a Promise. The Zustand store actions that call these
- *   functions must use await. The store has been updated accordingly.
+ *   The nodes table record tracks:
+ *     name                    — the global identity key (must be unique)
+ *     mind_map_id             — the D-node mindmap this record represents
+ *     list_of_mindmap_id      — every regular mindmap this D-node appears in
  *
- * EXPORTED API (same shape as before so the rest of the app doesn't change):
- *   initDB()
- *   createCanvas(name)          → canvas doc
- *   getAllCanvases()             → canvas doc[]
- *   getCanvas(id)               → canvas doc | null
- *   updateCanvasName(id, name)
- *   deleteCanvas(id)            — also deletes all child notes, mindmaps, nodes
- *   createNote(canvasId, name)  → note doc
- *   getNotesForCanvas(canvasId) → note doc[]
- *   getNote(noteId)             → note doc | null
- *   saveNote(noteId, tiptapJson, name?)
- *   deleteNote(noteId)
- *   createMindMap(canvasId, name) → mindmap doc
- *   getMindMapsForCanvas(canvasId) → mindmap doc[]
- *   getMindMap(mindmapId)          → mindmap doc | null
- *   saveMindMap(mindmapId, rfJson, name?)
- *   deleteMindMap(mindmapId)
- *   createNode(canvasId, name, mindMapId?) → node doc
- *   getNodesForCanvas(canvasId)            → node doc[]
- *   addMindMapToNode(nodeId, mindmapId)
- *   deleteNode(nodeId)
- *   syncWithRemote(remoteUrl)  ← NEW: one-line cloud sync when you're ready
+ *   When a D-node mindmap is deleted:
+ *     - The node record is deleted
+ *     - All mindmaps that contained the D-node have their essence updated
+ *       to convert D-node instances back to regular ellipse nodes
  */
 
 import PouchDB from "pouchdb";
-//browser optimised
-// import PouchDB from "pouchdb-browser";
 
-// ─── Database instance ────────────────────────────────────────────────────────
-// PouchDB creates (or reopens) a local database named "storysmith".
-// In Tauri's WebView this is backed by IndexedDB, which persists to disk
-// inside the app's data directory — no extra configuration needed.
 let db = null;
 
-// ─── ID prefix constants ──────────────────────────────────────────────────────
-// Prefixing IDs lets us do efficient range queries: allDocs({ startkey, endkey })
 const PREFIX = {
   CANVAS:  "canvas::",
   NOTE:    "note::",
@@ -69,79 +38,39 @@ const PREFIX = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INITIALISATION
+// INIT & SYNC
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * initDB — open (or create) the local PouchDB database.
- * Call this once in App.jsx before rendering anything.
- * PouchDB is schemaless — no table creation needed.
- */
 export async function initDB() {
-  // "storysmith" is the database name. PouchDB stores it in IndexedDB
-  // under that name automatically. If it already exists, it's just reopened.
   db = new PouchDB("storysmith");
   console.log("[StorySmith DB] PouchDB ready ✓", await db.info());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CLOUD SYNC  (call this whenever you're ready — works with CouchDB / Cloudant)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * syncWithRemote — start a live two-way sync with a remote CouchDB server.
- * This is the migration path from local → cloud. Call it once after initDB().
- *
- * @param {string} remoteUrl  e.g. "https://username:password@myserver.com/storysmith"
- *
- * Example:
- *   import { syncWithRemote } from './db'
- *   syncWithRemote('https://admin:pass@localhost:5984/storysmith')
- */
 export function syncWithRemote(remoteUrl) {
   if (!db) throw new Error("DB not initialised — call initDB() first");
-
-  // live: true  → keeps syncing in real time (not just a one-shot push/pull)
-  // retry: true → automatically reconnects if the network drops
   const sync = db.sync(remoteUrl, { live: true, retry: true });
-
   sync
-    .on("change",   (info)  => console.log("[Sync] change",   info))
-    .on("paused",   (err)   => console.log("[Sync] paused",   err))
-    .on("active",   ()      => console.log("[Sync] active"))
-    .on("denied",   (err)   => console.error("[Sync] denied", err))
-    .on("error",    (err)   => console.error("[Sync] error",  err));
-
-  return sync; // caller can call sync.cancel() to stop
+    .on("change",  (info) => console.log("[Sync] change",  info))
+    .on("paused",  (err)  => console.log("[Sync] paused",  err))
+    .on("active",  ()     => console.log("[Sync] active"))
+    .on("denied",  (err)  => console.error("[Sync] denied", err))
+    .on("error",   (err)  => console.error("[Sync] error",  err));
+  return sync;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITY
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Current ISO 8601 timestamp */
-const now = () => new Date().toISOString();
-
-/** Collision-safe UUID */
+const now  = () => new Date().toISOString();
 const uuid = () => crypto.randomUUID();
 
-/**
- * fetchByPrefix — fetch all documents whose _id starts with a given prefix.
- * PouchDB's allDocs supports key ranges; "\ufff0" is a high Unicode char that
- * sorts after all normal characters, so startkey="note::" endkey="note::\ufff0"
- * returns every note document.
- *
- * @param {string} prefix  e.g. "note::"
- * @returns {Promise<object[]>} array of document bodies (without _id/_rev noise)
- */
 async function fetchByPrefix(prefix) {
   const result = await db.allDocs({
-    startkey: prefix,
-    endkey:   prefix + "\ufff0",  // "\ufff0" sorts after all normal characters
-    include_docs: true,           // include the full document body, not just IDs
+    startkey:     prefix,
+    endkey:       prefix + "\ufff0",
+    include_docs: true,
   });
-  // result.rows is [{ id, key, value: { rev }, doc: { ...fields } }]
-  // We only want the doc bodies.
   return result.rows.map((row) => row.doc);
 }
 
@@ -149,27 +78,13 @@ async function fetchByPrefix(prefix) {
 // CANVAS CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Document shape:
- * {
- *   _id:               "canvas::<uuid>",
- *   _rev:              "<managed by PouchDB>",
- *   type:              "canvas",
- *   id:                "<uuid>",          ← convenience copy without prefix
- *   name:              string,
- *   date_last_modified: ISO string,
- *   date_created:       ISO string,
- * }
- */
-
-/** Create a new canvas and return it */
 export async function createCanvas(name = "Untitled Canvas") {
   const id = uuid();
   const ts = now();
   const doc = {
     _id:                PREFIX.CANVAS + id,
     type:               "canvas",
-    id,                           // kept as a clean field for convenience
+    id,
     name,
     date_last_modified: ts,
     date_created:       ts,
@@ -178,7 +93,6 @@ export async function createCanvas(name = "Untitled Canvas") {
   return doc;
 }
 
-/** Fetch all canvases, sorted newest-modified first */
 export async function getAllCanvases() {
   const docs = await fetchByPrefix(PREFIX.CANVAS);
   return docs.sort((a, b) =>
@@ -186,43 +100,32 @@ export async function getAllCanvases() {
   );
 }
 
-/** Fetch a single canvas by its short id (without prefix) */
 export async function getCanvas(id) {
-  try {
-    return await db.get(PREFIX.CANVAS + id);
-  } catch {
-    return null; // PouchDB throws a 404 error if not found
-  }
+  try { return await db.get(PREFIX.CANVAS + id); }
+  catch { return null; }
 }
 
-/** Rename a canvas (must fetch first to get the current _rev for the update) */
 export async function updateCanvasName(id, name) {
   const doc = await db.get(PREFIX.CANVAS + id);
-  // Spread existing fields, overwrite name and timestamp.
-  // _rev MUST be included — PouchDB rejects updates without it.
   await db.put({ ...doc, name, date_last_modified: now() });
 }
 
 /**
- * Delete a canvas AND all its child notes, mindmaps, and nodes.
- * PouchDB has no cascade deletes, so we do it manually.
+ * deleteCanvas — deletes a canvas and all its owned content.
+ * D-node mindmaps are NOT deleted here because they are canvas-independent.
+ * However any D-node records that listed this canvas' mindmaps are cleaned up.
  */
 export async function deleteCanvas(id) {
-  // Fetch all children first
   const [notes, mindmaps, nodes] = await Promise.all([
     getNotesForCanvas(id),
     getMindMapsForCanvas(id),
     getNodesForCanvas(id),
   ]);
 
-  // Build a bulk delete list: PouchDB bulk deletes by setting _deleted: true
+  // Regular children — bulk delete
   const deletions = [...notes, ...mindmaps, ...nodes].map((doc) => ({
-    _id:      doc._id,
-    _rev:     doc._rev,
-    _deleted: true,
+    _id: doc._id, _rev: doc._rev, _deleted: true,
   }));
-
-  // Delete all children in one batch, then delete the canvas itself
   if (deletions.length) await db.bulkDocs(deletions);
 
   const canvas = await db.get(PREFIX.CANVAS + id);
@@ -233,21 +136,6 @@ export async function deleteCanvas(id) {
 // NOTE CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Document shape:
- * {
- *   _id:               "note::<uuid>",
- *   type:              "note",
- *   note_id:           "<uuid>",
- *   note_name:         string,
- *   canvas_id:         string,   ← short canvas id (without prefix)
- *   date_last_modified: ISO string,
- *   date_created:       ISO string,
- *   essence:           object,   ← Tiptap JSON (stored as a real object, not a string)
- * }
- */
-
-/** Create an empty note inside a canvas */
 export async function createNote(canvasId, name = "Untitled Note") {
   const note_id = uuid();
   const ts = now();
@@ -259,16 +147,13 @@ export async function createNote(canvasId, name = "Untitled Note") {
     canvas_id:          canvasId,
     date_last_modified: ts,
     date_created:       ts,
-    essence:            { type: "doc", content: [] }, // empty Tiptap document
+    essence:            { type: "doc", content: [] },
   };
   await db.put(doc);
-
-  // Bump the parent canvas' last-modified timestamp
   await _touchCanvas(canvasId);
   return doc;
 }
 
-/** Fetch all notes belonging to a canvas, sorted newest-modified first */
 export async function getNotesForCanvas(canvasId) {
   const docs = await fetchByPrefix(PREFIX.NOTE);
   return docs
@@ -276,58 +161,30 @@ export async function getNotesForCanvas(canvasId) {
     .sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
 }
 
-/** Fetch a single note by its short id */
 export async function getNote(noteId) {
-  try {
-    return await db.get(PREFIX.NOTE + noteId);
-  } catch {
-    return null;
-  }
+  try { return await db.get(PREFIX.NOTE + noteId); }
+  catch { return null; }
 }
 
-/**
- * Save updated content (and optionally a new name) to a note.
- * @param {string} noteId
- * @param {object} tiptapJson  — result of editor.getJSON()
- * @param {string} [name]      — pass to rename at the same time
- */
 export async function saveNote(noteId, tiptapJson, name) {
   const doc = await db.get(PREFIX.NOTE + noteId);
-  const updated = {
-    ...doc,
-    essence:            tiptapJson,   // stored as a real JS object — no JSON.stringify needed
-    date_last_modified: now(),
-  };
+  const updated = { ...doc, essence: tiptapJson, date_last_modified: now() };
   if (name !== undefined) updated.note_name = name;
   await db.put(updated);
 }
 
-/** Delete a note */
 export async function deleteNote(noteId) {
   const doc = await db.get(PREFIX.NOTE + noteId);
   await db.remove(doc);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MINDMAP CRUD
+// MINDMAP CRUD  (regular mindmaps)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Document shape:
- * {
- *   _id:               "mindmap::<uuid>",
- *   type:              "mindmap",
- *   mindmap_id:        "<uuid>",
- *   mindmap_name:      string,
- *   canvas_id:         string,
- *   node_id:           string | null,  ← graph node that *represents* this mindmap
- *   date_last_modified: ISO string,
- *   date_created:       ISO string,
- *   essence:           { nodes: [], edges: [] },  ← React Flow state as a real object
- * }
+ * createMindMap — creates a regular (non-D-node) mindmap inside a canvas.
  */
-
-/** Create an empty mindmap inside a canvas */
 export async function createMindMap(canvasId, name = "Untitled MindMap") {
   const mindmap_id = uuid();
   const ts = now();
@@ -336,107 +193,380 @@ export async function createMindMap(canvasId, name = "Untitled MindMap") {
     type:               "mindmap",
     mindmap_id,
     mindmap_name:       name,
-    canvas_id:          canvasId,
+    canvas_id:          canvasId,   // owned by this canvas
+    is_dnode:           false,      // not a D-node mindmap
     node_id:            null,
     date_last_modified: ts,
     date_created:       ts,
-    essence:            { nodes: [], edges: [] }, // empty React Flow graph
+    essence:            { nodes: [], edges: [] },
   };
   await db.put(doc);
   await _touchCanvas(canvasId);
   return doc;
 }
 
-/** Fetch all mindmaps for a canvas, sorted newest-modified first */
+/**
+ * getMindMapsForCanvas — returns only regular (non-D-node) mindmaps for a canvas.
+ */
 export async function getMindMapsForCanvas(canvasId) {
   const docs = await fetchByPrefix(PREFIX.MINDMAP);
   return docs
-    .filter((d) => d.canvas_id === canvasId)
+    .filter((d) => d.canvas_id === canvasId && !d.is_dnode)
     .sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
 }
 
-/** Fetch a single mindmap by its short id */
 export async function getMindMap(mindmapId) {
-  try {
-    return await db.get(PREFIX.MINDMAP + mindmapId);
-  } catch {
-    return null;
-  }
+  try { return await db.get(PREFIX.MINDMAP + mindmapId); }
+  catch { return null; }
 }
 
-/**
- * Save updated React Flow state (and optionally a new name) to a mindmap.
- * @param {string} mindmapId
- * @param {{ nodes: object[], edges: object[] }} rfJson — React Flow's getNodes()/getEdges()
- * @param {string} [name]
- */
 export async function saveMindMap(mindmapId, rfJson, name) {
   const doc = await db.get(PREFIX.MINDMAP + mindmapId);
-  const updated = {
-    ...doc,
-    essence:            rfJson,   // real object — PouchDB serialises it automatically
-    date_last_modified: now(),
-  };
+  const updated = { ...doc, essence: rfJson, date_last_modified: now() };
   if (name !== undefined) updated.mindmap_name = name;
   await db.put(updated);
 }
 
-/** Delete a mindmap */
 export async function deleteMindMap(mindmapId) {
   const doc = await db.get(PREFIX.MINDMAP + mindmapId);
   await db.remove(doc);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NODE CRUD
+// D-NODE CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Document shape:
- * {
- *   _id:               "node::<uuid>",
- *   type:              "node",
- *   node_id:           "<uuid>",
- *   name:              string,
- *   canvas_id:         string,
- *   list_of_mindmap_id: string[],  ← real array, not a JSON string
- *   mind_map_id:       string | null,  ← mindmap this node *represents*
- * }
+ * getDNodeByName — look up an existing D-node record by name (the global key).
+ * Returns the node doc or null if no D-node with that name exists.
+ *
+ * This is the duplicate-prevention check. Always call this before creating
+ * a new D-node to avoid two D-nodes pointing at different mindmaps.
  */
-
-/** Create a graph node */
-export async function createNode(canvasId, name = "Node", mindMapId = null) {
-  const node_id = uuid();
-  const doc = {
-    _id:               PREFIX.NODE + node_id,
-    type:              "node",
-    node_id,
-    name,
-    canvas_id:         canvasId,
-    list_of_mindmap_id: [],        // real array — no JSON.stringify needed
-    mind_map_id:       mindMapId,
-  };
-  await db.put(doc);
-  return doc;
+export async function getDNodeByName(name) {
+  const docs = await fetchByPrefix(PREFIX.NODE);
+  return docs.find((d) => d.name === name) || null;
 }
 
-/** Fetch all nodes for a canvas */
+/**
+ * getAllDNodes — returns all D-node records (the nodes table, not the mindmaps).
+ * Used to populate the D-node picker panel.
+ */
+export async function getAllDNodes() {
+  const docs = await fetchByPrefix(PREFIX.NODE);
+  return docs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * getAllDNodeMindMaps — returns all D-node mindmap documents (is_dnode: true).
+ * These are listed separately from regular mindmaps in the sidebar.
+ */
+export async function getAllDNodeMindMaps() {
+  const docs = await fetchByPrefix(PREFIX.MINDMAP);
+  return docs
+    .filter((d) => d.is_dnode)
+    .sort((a, b) => a.mindmap_name.localeCompare(b.mindmap_name));
+}
+
+/**
+ * createDNode — creates a new globally unique D-node.
+ *
+ * Steps:
+ *   1. Check no D-node with this name already exists (throws if duplicate).
+ *   2. Create the D-node mindmap (is_dnode: true, canvas_id: null).
+ *   3. Populate the mindmap with two starter nodes:
+ *        a. A fixed ellipse labelled with the D-node's name (the "identity" node)
+ *        b. An appearances tracker node (type: "dnode_tracker")
+ *   4. Create the node record linking name ↔ mindmap.
+ *   5. Return { nodeRecord, mindmap }.
+ *
+ * @param {string} name       — the D-node's global name
+ * @param {string} hostMindmapId — the mindmap the D-node is first placed in
+ */
+export async function createDNode(name, hostMindmapId) {
+  // ── 1. Duplicate check ──────────────────────────────────────────────────
+  const existing = await getDNodeByName(name);
+  if (existing) {
+    // D-node already exists — just register this new host mindmap and return
+    return await _addHostMindmapToDNode(existing.node_id, hostMindmapId);
+  }
+
+  // ── 2. Create the D-node mindmap ────────────────────────────────────────
+  const mindmap_id = uuid();
+  const node_id    = uuid();
+  const ts         = now();
+
+  // ── 3. Build the two starter nodes ──────────────────────────────────────
+  // a. Fixed identity ellipse — non-draggable, non-deletable, shows the name
+  const identityNode = {
+    id:       `dnode-identity-${node_id}`,
+    type:     "ellipse",
+    position: { x: 300, y: 80 },
+    draggable: false,
+    deletable: false,
+    data: {
+      label:       name,
+      isReference: true,    // reuses the existing isReference flag to block editing
+      isDNodeIdentity: true, // extra flag so we can style it distinctly
+    },
+  };
+
+  // b. Appearances tracker — custom node type that lists all host mindmaps
+  const trackerNode = {
+    id:       `dnode-tracker-${node_id}`,
+    type:     "dnode_tracker",
+    position: { x: 100, y: 220 },
+    draggable: true,
+    data: {
+      dnodeId:          node_id,
+      dnodeName:        name,
+      // hostMindmaps is an array of { mindmap_id, mindmap_name, x, y }
+      // The tracker node reads this to render clickable appearance blocks.
+      // We populate the first entry now; subsequent ones are added via
+      // updateDNodeTrackerInMindmap() whenever a new host is added.
+      hostMindmaps: [],
+    },
+  };
+
+  const mindmapDoc = {
+    _id:                PREFIX.MINDMAP + mindmap_id,
+    type:               "mindmap",
+    mindmap_id,
+    mindmap_name:       name,   // same name as the D-node
+    canvas_id:          null,   // not owned by any canvas
+    is_dnode:           true,
+    node_id,                    // back-reference to the node record
+    date_last_modified: ts,
+    date_created:       ts,
+    essence: {
+      nodes: [identityNode, trackerNode],
+      edges: [],
+    },
+  };
+
+  // ── 4. Create the node record ────────────────────────────────────────────
+  const nodeDoc = {
+    _id:                PREFIX.NODE + node_id,
+    type:               "node",
+    node_id,
+    name,
+    canvas_id:          null,           // global — not tied to a canvas
+    mind_map_id:        mindmap_id,     // the D-node mindmap this represents
+    list_of_mindmap_id: hostMindmapId   // mindmaps this D-node appears in
+      ? [hostMindmapId]
+      : [],
+  };
+
+  // Write both in parallel
+  await Promise.all([db.put(mindmapDoc), db.put(nodeDoc)]);
+
+  // ── 5. Add the host mindmap to the tracker after node_id is known ────────
+  if (hostMindmapId) {
+    await _syncTrackerNode(mindmap_id, node_id, nodeDoc.list_of_mindmap_id);
+  }
+
+  return { nodeRecord: nodeDoc, mindmap: mindmapDoc };
+}
+
+/**
+ * registerDNodeInMindmap — call this when an existing D-node is placed into
+ * a new mindmap. Updates list_of_mindmap_id and refreshes the tracker node.
+ *
+ * @param {string} dnodeNodeId   — the node record's node_id
+ * @param {string} hostMindmapId — the mindmap the D-node is being added to
+ */
+export async function registerDNodeInMindmap(dnodeNodeId, hostMindmapId) {
+  return _addHostMindmapToDNode(dnodeNodeId, hostMindmapId);
+}
+
+/**
+ * unregisterDNodeFromMindmap — call this when a D-node instance is removed
+ * from a mindmap (e.g. the user deletes that node from the canvas).
+ */
+export async function unregisterDNodeFromMindmap(dnodeNodeId, hostMindmapId) {
+  const nodeDoc = await db.get(PREFIX.NODE + dnodeNodeId);
+  const updated = nodeDoc.list_of_mindmap_id.filter((id) => id !== hostMindmapId);
+  const savedNode = await db.put({ ...nodeDoc, list_of_mindmap_id: updated });
+
+  // Refresh the tracker node in the D-node's own mindmap
+  await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, updated);
+  return savedNode;
+}
+
+/**
+ * renameDNode — renames a D-node globally.
+ * Updates: node record, D-node mindmap name, identity node label inside the mindmap.
+ */
+export async function renameDNode(dnodeNodeId, newName) {
+  // Check the new name isn't already taken by a different D-node
+  const conflict = await getDNodeByName(newName);
+  if (conflict && conflict.node_id !== dnodeNodeId) {
+    throw new Error(`A D-node named "${newName}" already exists.`);
+  }
+
+  const nodeDoc = await db.get(PREFIX.NODE + dnodeNodeId);
+  const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
+
+  // Update identity node label inside the mindmap essence
+  const updatedNodes = mindmapDoc.essence.nodes.map((n) =>
+    n.data?.isDNodeIdentity
+      ? { ...n, data: { ...n.data, label: newName } }
+      : n
+  );
+
+  await Promise.all([
+    db.put({ ...nodeDoc, name: newName }),
+    db.put({
+      ...mindmapDoc,
+      mindmap_name: newName,
+      essence: { ...mindmapDoc.essence, nodes: updatedNodes },
+      date_last_modified: now(),
+    }),
+  ]);
+}
+
+/**
+ * deleteDNodeMindmap — deletes a D-node and its mindmap entirely.
+ *
+ * For every mindmap that contained a D-node instance, the D-node instance
+ * node is converted to a regular ellipse node (isDNode: false, isDNodeIdentity
+ * removed) so the user doesn't lose the visual structure, just the D-node link.
+ */
+export async function deleteDNodeMindmap(dnodeNodeId) {
+  const nodeDoc = await db.get(PREFIX.NODE + dnodeNodeId);
+
+  // Convert all instances back to regular ellipse nodes
+  await Promise.all(
+    nodeDoc.list_of_mindmap_id.map((mmId) =>
+      _convertDNodeInstancesToEllipse(mmId, dnodeNodeId)
+    )
+  );
+
+  // Delete the mindmap and the node record
+  const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
+  await Promise.all([
+    db.remove(mindmapDoc),
+    db.remove(nodeDoc),
+  ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRIVATE D-NODE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * _addHostMindmapToDNode — adds a mindmap ID to a D-node's list_of_mindmap_id
+ * and refreshes the tracker node. Called by both createDNode (existing name)
+ * and registerDNodeInMindmap.
+ */
+async function _addHostMindmapToDNode(dnodeNodeId, hostMindmapId) {
+  const nodeDoc = await db.get(PREFIX.NODE + dnodeNodeId);
+  const list = nodeDoc.list_of_mindmap_id.includes(hostMindmapId)
+    ? nodeDoc.list_of_mindmap_id
+    : [...nodeDoc.list_of_mindmap_id, hostMindmapId];
+
+  await db.put({ ...nodeDoc, list_of_mindmap_id: list });
+  await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, list);
+
+  return {
+    nodeRecord: { ...nodeDoc, list_of_mindmap_id: list },
+    mindmap: await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id),
+  };
+}
+
+/**
+ * _syncTrackerNode — rebuilds the hostMindmaps array inside the tracker node
+ * of a D-node mindmap. Fetches the name and latest D-node position for each
+ * host mindmap so the tracker blocks are always up to date.
+ *
+ * @param {string}   dnodeMindmapId  — the D-node's own mindmap ID
+ * @param {string}   dnodeNodeId     — the node record ID
+ * @param {string[]} hostMindmapIds  — current list of host mindmap IDs
+ */
+async function _syncTrackerNode(dnodeMindmapId, dnodeNodeId, hostMindmapIds) {
+  const mindmapDoc = await db.get(PREFIX.MINDMAP + dnodeMindmapId);
+
+  // Build hostMindmaps entries — fetch name + find the D-node's position
+  const hostMindmaps = await Promise.all(
+    hostMindmapIds.map(async (mmId) => {
+      const mm = await getMindMap(mmId);
+      if (!mm) return null;
+
+      // Find the D-node instance inside this host mindmap to get its x/y
+      const instanceNode = mm.essence?.nodes?.find(
+        (n) => n.data?.dnodeNodeId === dnodeNodeId
+      );
+
+      return {
+        mindmap_id:   mmId,
+        mindmap_name: mm.mindmap_name,
+        x: instanceNode?.position?.x ?? 0,
+        y: instanceNode?.position?.y ?? 0,
+      };
+    })
+  );
+
+  // Filter out nulls (mindmaps that were deleted)
+  const validHosts = hostMindmaps.filter(Boolean);
+
+  // Update the tracker node's data
+  const updatedNodes = mindmapDoc.essence.nodes.map((n) =>
+    n.type === "dnode_tracker"
+      ? { ...n, data: { ...n.data, hostMindmaps: validHosts } }
+      : n
+  );
+
+  await db.put({
+    ...mindmapDoc,
+    essence: { ...mindmapDoc.essence, nodes: updatedNodes },
+    date_last_modified: now(),
+  });
+}
+
+/**
+ * _convertDNodeInstancesToEllipse — in a given mindmap, finds all nodes that
+ * are instances of a specific D-node and strips their D-node data, leaving
+ * behind a regular ellipse node with the same label and position.
+ */
+async function _convertDNodeInstancesToEllipse(mindmapId, dnodeNodeId) {
+  try {
+    const mm = await db.get(PREFIX.MINDMAP + mindmapId);
+    const updatedNodes = mm.essence.nodes.map((n) => {
+      if (n.data?.dnodeNodeId !== dnodeNodeId) return n;
+      // Strip all D-node specific data, keep label and position
+      return {
+        ...n,
+        type: "ellipse",
+        data: {
+          label:       n.data.label || n.data.dnodeName || "Node",
+          bgColor:     n.data.bgColor,
+          // Remove all D-node fields
+          isDNode:     undefined,
+          dnodeNodeId: undefined,
+          dnodeName:   undefined,
+          dnodeMindmapId: undefined,
+        },
+      };
+    });
+    await db.put({
+      ...mm,
+      essence: { ...mm.essence, nodes: updatedNodes },
+      date_last_modified: now(),
+    });
+  } catch {
+    // Mindmap may have been deleted already — ignore
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NODE CRUD  (kept for direct access if needed)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function getNodesForCanvas(canvasId) {
   const docs = await fetchByPrefix(PREFIX.NODE);
   return docs.filter((d) => d.canvas_id === canvasId);
 }
 
-/** Add a mindmap ID to a node's list_of_mindmap_id (if not already present) */
-export async function addMindMapToNode(nodeId, mindmapId) {
-  const doc = await db.get(PREFIX.NODE + nodeId);
-  if (doc.list_of_mindmap_id.includes(mindmapId)) return; // already there
-  await db.put({
-    ...doc,
-    list_of_mindmap_id: [...doc.list_of_mindmap_id, mindmapId],
-  });
-}
-
-/** Delete a node */
 export async function deleteNode(nodeId) {
   const doc = await db.get(PREFIX.NODE + nodeId);
   await db.remove(doc);
@@ -446,15 +576,9 @@ export async function deleteNode(nodeId) {
 // PRIVATE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * _touchCanvas — update a canvas's date_last_modified without changing anything else.
- * Called internally after creating a note or mindmap inside a canvas.
- */
 async function _touchCanvas(canvasId) {
   try {
     const doc = await db.get(PREFIX.CANVAS + canvasId);
     await db.put({ ...doc, date_last_modified: now() });
-  } catch {
-    // Canvas might have been deleted — silently ignore
-  }
+  } catch { /* canvas may have been deleted */ }
 }

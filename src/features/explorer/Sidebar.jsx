@@ -1,14 +1,11 @@
 /**
  * Sidebar.jsx — Workspace Explorer Panel
  * ────────────────────────────────────────
- * Shows only the content type relevant to the current view:
- *   activeView === "note"    → lists Notes only
- *   activeView === "mindmap" → lists MindMaps only
+ * activeView === "note"    → shows Notes list only
+ * activeView === "mindmap" → shows MindMaps list + D-Node Mindmaps section
  *
- * Switching views via the ActionDock updates activeView in the store,
- * which causes the sidebar to swap its list automatically.
- * The last active note and last active mindmap are remembered independently
- * so switching back always returns to where you left off.
+ * D-node mindmaps are listed under a separate "D-Nodes" heading since they
+ * are global (not canvas-owned) and behave differently from regular mindmaps.
  */
 
 import { useState, useRef } from "react";
@@ -16,16 +13,15 @@ import useStore from "../../State/useStore";
 import styles from "./Sidebar.module.css";
 
 // ─── Inline-rename helper ─────────────────────────────────────────────────────
-// Double-click an item to turn it into an input field.
 function EditableLabel({ value, onSave, className }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft]     = useState(value);
   const ref = useRef(null);
 
   const commit = () => {
     setEditing(false);
     if (draft.trim() && draft !== value) onSave(draft.trim());
-    else setDraft(value); // revert if blank
+    else setDraft(value);
   };
 
   if (editing) {
@@ -37,37 +33,26 @@ function EditableLabel({ value, onSave, className }) {
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
+          if (e.key === "Enter")  commit();
           if (e.key === "Escape") { setEditing(false); setDraft(value); }
         }}
         autoFocus
       />
     );
   }
-
   return (
-    <span
-      className={className}
-      onDoubleClick={() => setEditing(true)}
-      title="Double-click to rename"
-    >
+    <span className={className} onDoubleClick={() => setEditing(true)} title="Double-click to rename">
       {value}
     </span>
   );
 }
 
-// ─── Single list item ─────────────────────────────────────────────────────────
-function ExplorerItem({ label, isActive, onSelect, onRename, onDelete }) {
+// ─── Explorer item ────────────────────────────────────────────────────────────
+function ExplorerItem({ label, isActive, onSelect, onRename, onDelete, badge }) {
   return (
-    <div
-      className={`${styles.item} ${isActive ? styles.itemActive : ""}`}
-      onClick={onSelect}
-    >
-      <EditableLabel
-        value={label}
-        onSave={onRename}
-        className={styles.itemLabel}
-      />
+    <div className={`${styles.item} ${isActive ? styles.itemActive : ""}`} onClick={onSelect}>
+      {badge && <span className={styles.itemBadge}>{badge}</span>}
+      <EditableLabel value={label} onSave={onRename} className={styles.itemLabel} />
       <button
         className={styles.itemDelete}
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -81,49 +66,49 @@ function ExplorerItem({ label, isActive, onSelect, onRename, onDelete }) {
 
 // ─── Main Sidebar ─────────────────────────────────────────────────────────────
 export default function Sidebar({ onBack }) {
-  // ── Canvas ──────────────────────────────────────────────────────────────
-  const canvases      = useStore((s) => s.canvases);
+  // Canvas
+  const canvases       = useStore((s) => s.canvases);
   const activeCanvasId = useStore((s) => s.activeCanvasId);
-  const renameCanvas  = useStore((s) => s.renameCanvas);
-  const canvas        = canvases.find((c) => c.id === activeCanvasId);
+  const renameCanvas   = useStore((s) => s.renameCanvas);
+  const canvas         = canvases.find((c) => c.id === activeCanvasId);
 
-  // ── Active view — determines which list to show ──────────────────────────
-  const activeView    = useStore((s) => s.activeView);
+  const activeView = useStore((s) => s.activeView);
 
-  // ── Notes ────────────────────────────────────────────────────────────────
-  const notes         = useStore((s) => s.notes);
-  const activeNoteId  = useStore((s) => s.activeNoteId);
-  const addNote       = useStore((s) => s.addNote);
-  const selectNote    = useStore((s) => s.selectNote);
-  const persistNote   = useStore((s) => s.persistNote);
-  const removeNote    = useStore((s) => s.removeNote);
+  // Notes
+  const notes        = useStore((s) => s.notes);
+  const activeNoteId = useStore((s) => s.activeNoteId);
+  const addNote      = useStore((s) => s.addNote);
+  const selectNote   = useStore((s) => s.selectNote);
+  const persistNote  = useStore((s) => s.persistNote);
+  const removeNote   = useStore((s) => s.removeNote);
 
-  // ── MindMaps ─────────────────────────────────────────────────────────────
-  const mindmaps        = useStore((s) => s.mindmaps);
-  const activeMindMapId = useStore((s) => s.activeMindMapId);
-  const addMindMap      = useStore((s) => s.addMindMap);
-  const selectMindMap   = useStore((s) => s.selectMindMap);
-  const persistMindMap  = useStore((s) => s.persistMindMap);
-  const removeMindMap   = useStore((s) => s.removeMindMap);
+  // Regular mindmaps
+  const mindmaps         = useStore((s) => s.mindmaps);
+  const activeMindMapId  = useStore((s) => s.activeMindMapId);
+  const addMindMap       = useStore((s) => s.addMindMap);
+  const selectMindMap    = useStore((s) => s.selectMindMap);
+  const persistMindMap   = useStore((s) => s.persistMindMap);
+  const removeMindMap    = useStore((s) => s.removeMindMap);
 
-  // ── Derived: label + add handler for the current view ───────────────────
-  // These drive the section header so it always reflects what's shown.
-  const sectionLabel  = activeView === "note" ? "Notes" : "MindMap";
-  const handleAdd     = activeView === "note"
-    ? () => addNote("Untitled Note")
-    : () => addMindMap("Untitled MindMap");
+  // D-node mindmaps (global)
+  const dNodes            = useStore((s) => s.dNodes);
+  const dNodeMindMaps     = useStore((s) => s.dNodeMindMaps);
+  const selectDNodeMindMap = useStore((s) => s.selectDNodeMindMap);
+  const renameDNode       = useStore((s) => s.renameDNode);
+  const removeDNodeMindmap = useStore((s) => s.removeDNodeMindmap);
+
+  // Find the node record for a D-node mindmap (needed for rename/delete)
+  const nodeRecordForMindmap = (mindmapId) =>
+    dNodes.find((d) => d.mind_map_id === mindmapId);
 
   return (
     <aside className={styles.root}>
-      {/* Decorative accent glow strip on the right edge */}
       <div className={styles.glowStrip} />
 
-      {/* ── Back button ──────────────────────────────────────────────── */}
-      <button className={styles.backBtn} onClick={onBack} title="Back to collection">
-        ← Collection
-      </button>
+      {/* ── Back ─────────────────────────────────────────────────────── */}
+      <button className={styles.backBtn} onClick={onBack}>← Collection</button>
 
-      {/* ── Canvas title (double-click to rename) ────────────────────── */}
+      {/* ── Canvas title ─────────────────────────────────────────────── */}
       <div className={styles.canvasTitle}>
         {canvas ? (
           <EditableLabel
@@ -136,67 +121,88 @@ export default function Sidebar({ onBack }) {
         )}
       </div>
 
-      {/* ── Content section — swaps between Notes and MindMaps ───────── */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionLabel}>{sectionLabel}</span>
-          <button
-            className={styles.addBtn}
-            onClick={handleAdd}
-            title={`New ${sectionLabel.toLowerCase()}`}
-          >
-            ＋
-          </button>
+      {/* ── Notes (only shown in note view) ──────────────────────────── */}
+      {activeView === "note" && (
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionLabel}>Notes</span>
+            <button className={styles.addBtn} onClick={() => addNote("Untitled Note")} title="New note">＋</button>
+          </div>
+          <div className={styles.list}>
+            {notes.length === 0 && <p className={styles.empty}>No notes yet</p>}
+            {notes.map((note) => (
+              <ExplorerItem
+                key={note.note_id}
+                label={note.note_name}
+                isActive={activeNoteId === note.note_id}
+                onSelect={() => selectNote(note.note_id)}
+                onRename={(name) => persistNote(note.note_id, note.essence ?? {}, name)}
+                onDelete={() => removeNote(note.note_id)}
+              />
+            ))}
+          </div>
         </div>
+      )}
 
-        <div className={styles.list}>
-          {/* ── Notes list (shown when activeView === "note") ─────────── */}
-          {activeView === "note" && (
-            <>
-              {notes.length === 0 && (
-                <p className={styles.empty}>No notes yet</p>
-              )}
-              {notes.map((note) => (
-                <ExplorerItem
-                  key={note.note_id}
-                  label={note.note_name}
-                  isActive={activeNoteId === note.note_id}
-                  onSelect={() => selectNote(note.note_id)}
-                  onRename={(name) =>
-                    persistNote(note.note_id, note.essence ?? {}, name)
-                  }
-                  onDelete={() => removeNote(note.note_id)}
-                />
-              ))}
-            </>
-          )}
-
-          {/* ── MindMaps list (shown when activeView === "mindmap") ────── */}
-          {activeView === "mindmap" && (
-            <>
-              {mindmaps.length === 0 && (
-                <p className={styles.empty}>No mind maps yet</p>
-              )}
+      {/* ── Mindmaps (only shown in mindmap view) ────────────────────── */}
+      {activeView === "mindmap" && (
+        <>
+          {/* Regular mindmaps */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <span className={styles.sectionLabel}>MindMaps</span>
+              <button className={styles.addBtn} onClick={() => addMindMap("Untitled MindMap")} title="New mind map">＋</button>
+            </div>
+            <div className={styles.list}>
+              {mindmaps.length === 0 && <p className={styles.empty}>No mind maps yet</p>}
               {mindmaps.map((mm) => (
                 <ExplorerItem
                   key={mm.mindmap_id}
                   label={mm.mindmap_name}
                   isActive={activeMindMapId === mm.mindmap_id}
                   onSelect={() => selectMindMap(mm.mindmap_id)}
-                  onRename={(name) =>
-                    persistMindMap(
-                      mm.mindmap_id,
-                      mm.essence ?? { nodes: [], edges: [] },
-                      name
-                    )
-                  }
+                  onRename={(name) => persistMindMap(mm.mindmap_id, mm.essence ?? { nodes: [], edges: [] }, name)}
                   onDelete={() => removeMindMap(mm.mindmap_id)}
                 />
               ))}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </div>
+
+          {/* D-node mindmaps — separate section, globally scoped */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              {/* Purple tinted label to distinguish from regular mindmaps */}
+              <span className={`${styles.sectionLabel} ${styles.sectionLabelDNode}`}>
+                D-Nodes
+              </span>
+              {/* No add button here — D-nodes are created from the canvas */}
+            </div>
+            <div className={styles.list}>
+              {dNodeMindMaps.length === 0 && (
+                <p className={styles.empty}>No D-nodes yet</p>
+              )}
+              {dNodeMindMaps.map((mm) => {
+                const nodeRec = nodeRecordForMindmap(mm.mindmap_id);
+                return (
+                  <ExplorerItem
+                    key={mm.mindmap_id}
+                    label={mm.mindmap_name}
+                    badge="D"
+                    isActive={activeMindMapId === mm.mindmap_id}
+                    onSelect={() => selectDNodeMindMap(mm.mindmap_id)}
+                    onRename={(name) => {
+                      if (nodeRec) renameDNode(nodeRec.node_id, name);
+                    }}
+                    onDelete={() => {
+                      if (nodeRec) removeDNodeMindmap(nodeRec.node_id);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </aside>
   );
 }

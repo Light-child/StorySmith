@@ -1,340 +1,432 @@
-// useMindMap.js — The mindmap brain hook
-// ─────────────────────────────────────────
-// This is your original useMindMap hook with two additions:
+// useMindMap.js — Mindmap brain hook
+// ────────────────────────────────────
+// Portal system replaced by D-nodes:
+//   enterPortal  → enterDNode(dnodeMindmapId)
+//   isPortal     → isDNode (on node data)
+//   allData sub-canvas levels → separate PouchDB mindmap records
 //
-//   1. LOAD: a useEffect watching activeMindMapId that reads the mindmap's
-//      stored essence from the Zustand store and initialises allData from it.
-//
-//   2. SAVE: a useEffect watching allData that debounces a call to
-//      persistMindMap, writing the current state to PouchDB.
-//
-// Everything else (portal navigation, node/edge handlers, proppedNodes,
-// proppedEdges, paste, dirty state) is exactly your original code.
+// allData is now flat: { nodes: [], edges: [] } for the current mindmap only.
+// Navigating "into" a D-node just switches activeMindMapId in the store.
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { addEdge, applyNodeChanges, applyEdgeChanges, MarkerType } from 'reactflow';
 
 import { initialNodes } from './flowTypes';
 import useStore from '../../State/useStore';
 
 export function useMindMap() {
-  // ── Store connection ──────────────────────────────────────────────────────
-  // We read activeMindMapId and mindmaps to know what to load,
-  // and persistMindMap to save changes back to PouchDB.
-  const activeMindMapId = useStore((s) => s.activeMindMapId);
-  const mindmaps        = useStore((s) => s.mindmaps);
-  const persistMindMap  = useStore((s) => s.persistMindMap);
+  // ── Store ─────────────────────────────────────────────────────────────────
+  const activeMindMapId    = useStore((s) => s.activeMindMapId);
+  const mindmaps           = useStore((s) => s.mindmaps);
+  const dNodeMindMaps      = useStore((s) => s.dNodeMindMaps);
+  const persistMindMap     = useStore((s) => s.persistMindMap);
+  const addDNode           = useStore((s) => s.addDNode);
+  const registerDNodeInMindmap   = useStore((s) => s.registerDNodeInMindmap);
+  const unregisterDNodeFromMindmap = useStore((s) => s.unregisterDNodeFromMindmap);
+  const selectDNodeMindMap = useStore((s) => s.selectDNodeMindMap);
+  const selectMindMap      = useStore((s) => s.selectMindMap);
 
-  // Keep persistMindMap in a ref so the debounced save effect never
-  // goes stale (same pattern used in NoteEditor).
+  // Keep persistMindMap in a ref so debounced saves never go stale
   const persistRef = useRef(persistMindMap);
   useEffect(() => { persistRef.current = persistMindMap; }, [persistMindMap]);
 
-  // ── Core state (your original) ────────────────────────────────────────────
-  const [allData, setAllData] = useState({ root: { nodes: initialNodes, edges: [] } });
-  const [path, setPath]       = useState([{ id: 'root', name: 'Home' }]);
+  // ── Local state — flat: just nodes + edges for the current mindmap ───────
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
   const [isDirty, setIsDirty] = useState(false);
 
-  // ── ADDITION 1: Load from PouchDB when the active mindmap changes ─────────
-  // When the user selects a different mindmap in the sidebar, this effect
-  // reads its stored essence and reinitialises allData and path.
+  // ── React Flow ref for programmatic pan/zoom (used by tracker go-to) ─────
+  const rfInstance = useRef(null);
+
+  // ── LOAD: when activeMindMapId changes, load its content ─────────────────
   useEffect(() => {
     if (!activeMindMapId) {
-      // No mindmap selected — reset to empty canvas
-      setAllData({ root: { nodes: initialNodes, edges: [] } });
-      setPath([{ id: 'root', name: 'Home' }]);
+      setNodes(initialNodes);
+      setEdges([]);
       setIsDirty(false);
       return;
     }
 
-    // Find the mindmap document in the store's in-memory array
-    const mindmap = mindmaps.find((m) => m.mindmap_id === activeMindMapId);
-    if (!mindmap) return;
+    // Check regular mindmaps first, then D-node mindmaps
+    const mm =
+      mindmaps.find((m) => m.mindmap_id === activeMindMapId) ||
+      dNodeMindMaps.find((m) => m.mindmap_id === activeMindMapId);
 
-    const stored = mindmap.essence;
+    if (!mm) return;
 
-    // essence should be { root: { nodes, edges }, [portalId]: { nodes, edges }, ... }
-    // Validate it has at least a root level; fall back to empty if corrupted.
-    if (stored && typeof stored === 'object' && stored.root) {
-      setAllData(stored);
+    const stored = mm.essence;
+    if (stored && typeof stored === 'object') {
+      setNodes(stored.nodes || initialNodes);
+      setEdges(stored.edges || []);
     } else {
-      setAllData({ root: { nodes: initialNodes, edges: [] } });
+      setNodes(initialNodes);
+      setEdges([]);
     }
-
-    // Reset navigation to the root level of the newly loaded map
-    setPath([{ id: 'root', name: 'Home' }]);
     setIsDirty(false);
-  }, [activeMindMapId]); // intentionally excludes mindmaps to avoid re-running on every save
+  }, [activeMindMapId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── ADDITION 2: Auto-save to PouchDB when allData changes ─────────────────
-  // Debounced 2s after the last change — same pattern as NoteEditor.
-  // isDirty guards against saving on the initial load (which sets allData
-  // from PouchDB, not from user interaction).
+  // ── SAVE: debounced 2s after any change ──────────────────────────────────
   const saveTimer = useRef(null);
   useEffect(() => {
     if (!activeMindMapId || !isDirty) return;
-
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      // allData is the full multi-level object including portal sub-canvases.
-      // We store the whole thing as the mindmap's essence.
-      persistRef.current(activeMindMapId, allData);
+      persistRef.current(activeMindMapId, { nodes, edges });
     }, 2000);
-
     return () => clearTimeout(saveTimer.current);
-  }, [allData, activeMindMapId, isDirty]);
+  }, [nodes, edges, activeMindMapId, isDirty]);
 
-  // ── Helpers (your original) ───────────────────────────────────────────────
-  const currentLevelId = path[path.length - 1]?.id || 'root';
+  // ───────────────────────────────────────────────────────────────────────────
+  // NODE & EDGE CHANGE HANDLERS
+  // ───────────────────────────────────────────────────────────────────────────
 
-  const currentView = useMemo(() =>
-    allData[currentLevelId] || { nodes: [], edges: [] },
-  [allData, currentLevelId]);
-
-  // ── Node & edge change handlers (your original) ───────────────────────────
   const onNodesChange = useCallback((changes) => {
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        nodes: applyNodeChanges(changes, prev[currentLevelId].nodes),
-      }
-    }));
-  }, [currentLevelId]);
+    setNodes((prev) => applyNodeChanges(changes, prev));
+    setIsDirty(true);
+  }, []);
 
   const onEdgesChange = useCallback((changes) => {
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        edges: applyEdgeChanges(changes, prev[currentLevelId].edges),
-      }
-    }));
-  }, [currentLevelId]);
+    setEdges((prev) => applyEdgeChanges(changes, prev));
+    setIsDirty(true);
+  }, []);
 
   const onConnect = useCallback((params) => {
-    setAllData(prev => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        edges: addEdge({
-          ...params,
-          type: 'custom',
-          data: { label: '', color: '#b1b1b7', lineType: 'curved' }
-        }, prev[currentLevelId].edges)
-      }
-    }));
-  }, [currentLevelId]);
+    setEdges((prev) => addEdge({
+      ...params,
+      type: 'custom',
+      data: { label: '', color: '#b1b1b7', lineType: 'curved' },
+    }, prev));
+    setIsDirty(true);
+  }, []);
 
+  // ── Edge data updates ─────────────────────────────────────────────────────
   const onEdgeLabelChange = useCallback((edgeId, newLabel) => {
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        edges: prev[currentLevelId].edges.map((e) =>
-          e.id === edgeId ? { ...e, data: { ...e.data, label: newLabel } } : e
-        ),
-      },
-    }));
-  }, [currentLevelId]);
+    setEdges((prev) => prev.map((e) =>
+      e.id === edgeId ? { ...e, data: { ...e.data, label: newLabel } } : e
+    ));
+    setIsDirty(true);
+  }, []);
 
   const onEdgeColorChange = useCallback((edgeId, newColor) => {
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        edges: prev[currentLevelId].edges.map((e) =>
-          e.id === edgeId ? { ...e, data: { ...e.data, color: newColor } } : e
-        ),
-      },
-    }));
-  }, [currentLevelId]);
+    setEdges((prev) => prev.map((e) =>
+      e.id === edgeId ? { ...e, data: { ...e.data, color: newColor } } : e
+    ));
+    setIsDirty(true);
+  }, []);
 
   const onLineTypeChange = useCallback((edgeId, type) => {
-    setAllData((prev) => {
-      const currentLevel = prev[currentLevelId];
-      if (!currentLevel) return prev;
-
-      const updatedEdges = currentLevel.edges.map((edge) => {
-        if (edge.id === edgeId) {
-          const currentColor = edge.data?.color || '#b1b1b7';
-          const hasArrowEnd   = type?.includes('arrow-end')   || type?.includes('arrow-both');
-          const hasArrowStart = type?.includes('arrow-start') || type?.includes('arrow-both');
-
-          const updatedEdge = { ...edge, data: { ...edge.data, lineType: type } };
-
-          if (hasArrowEnd)   updatedEdge.markerEnd   = { type: MarkerType.ArrowClosed, color: currentColor };
-          else               delete updatedEdge.markerEnd;
-
-          if (hasArrowStart) updatedEdge.markerStart = { type: MarkerType.ArrowClosed, color: currentColor };
-          else               delete updatedEdge.markerStart;
-
-          return updatedEdge;
-        }
-        return edge;
-      });
-
-      return { ...prev, [currentLevelId]: { ...currentLevel, edges: updatedEdges } };
-    });
-  }, [currentLevelId]);
-
-  const onLabelChange = useCallback((id, newValue) => {
-    setAllData((prev) => {
-      const currentLevel = prev[currentLevelId];
-      if (!currentLevel) return prev;
-
-      const isTable = typeof newValue === 'object' && newValue !== null;
-      const updatedNodes = currentLevel.nodes.map((node) => {
-        if (node.id === id) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              ...(isTable ? { tableData: newValue } : { label: newValue })
-            }
-          };
-        }
-        return node;
-      });
-
-      return { ...prev, [currentLevelId]: { ...currentLevel, nodes: updatedNodes } };
-    });
-  }, [currentLevelId]);
-
-  // ── Portal navigation (your original) ────────────────────────────────────
-  const enterPortal = useCallback((nodeId, nodeLabel) => {
-    setAllData(prev => {
-      const updated = { ...prev };
-      updated[currentLevelId].nodes = updated[currentLevelId].nodes.map(n =>
-        n.id === nodeId ? { ...n, data: { ...n.data, isPortal: true } } : n
-      );
-      if (!updated[nodeId]) {
-        updated[nodeId] = {
-          nodes: [{
-            id: `ref-${nodeId}`,
-            type: 'ellipse',
-            position: { x: 250, y: 200 },
-            data: { label: nodeLabel, isReference: true },
-            draggable: false
-          }],
-          edges: []
-        };
-      }
+    setEdges((prev) => prev.map((edge) => {
+      if (edge.id !== edgeId) return edge;
+      const currentColor  = edge.data?.color || '#b1b1b7';
+      const hasArrowEnd   = type?.includes('arrow-end')   || type?.includes('arrow-both');
+      const hasArrowStart = type?.includes('arrow-start') || type?.includes('arrow-both');
+      const updated = { ...edge, data: { ...edge.data, lineType: type } };
+      if (hasArrowEnd)   updated.markerEnd   = { type: MarkerType.ArrowClosed, color: currentColor };
+      else               delete updated.markerEnd;
+      if (hasArrowStart) updated.markerStart = { type: MarkerType.ArrowClosed, color: currentColor };
+      else               delete updated.markerStart;
       return updated;
-    });
-    setPath(prev => [...prev, { id: nodeId, name: nodeLabel }]);
-  }, [currentLevelId]);
-
-  const goBack = useCallback(() => {
-    if (path.length <= 1) return;
-    setPath(prev => prev.slice(0, -1));
-  }, [path]);
-
-  // ── Add node (your original) ──────────────────────────────────────────────
-  const addNode = useCallback((type) => {
-    const id = `${type}_${Date.now()}`;
-    const newNode = {
-      id,
-      type,
-      position: { x: 150, y: 150 },
-      data: {
-        label: type === 'table' ? '' : `New ${type}`,
-        tableData: type === 'table'
-          ? { headers: ['Header 1', 'Header 2'], rows: [['', '']] }
-          : null,
-        onLabelChange,
-        enterPortal,
-        onEdgesChange,
-      },
-      style: type === 'table' ? { width: 300, height: 200 } : {}
-    };
-
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        nodes: [...prev[currentLevelId].nodes, newNode]
-      }
     }));
-  }, [currentLevelId, enterPortal, onLabelChange, onEdgesChange]);
+    setIsDirty(true);
+  }, []);
 
   const onEdgeDelete = useCallback((edgeId) => {
-    setAllData((prev) => ({
-      ...prev,
-      [currentLevelId]: {
-        ...prev[currentLevelId],
-        edges: prev[currentLevelId].edges.filter((e) => e.id !== edgeId),
-      },
-    }));
-  }, [currentLevelId]);
+    setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+    setIsDirty(true);
+  }, []);
 
-  // ── Propped nodes & edges (your original) ─────────────────────────────────
-  // Injects live callbacks into node data so nodes can communicate back up.
+  // ── Label / table change ──────────────────────────────────────────────────
+  const onLabelChange = useCallback((id, newValue) => {
+    const isTable = typeof newValue === 'object' && newValue !== null;
+    setNodes((prev) => prev.map((n) => {
+      if (n.id !== id) return n;
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          ...(isTable ? { tableData: newValue } : { label: newValue }),
+        },
+      };
+    }));
+    setIsDirty(true);
+  }, []);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // D-NODE NAVIGATION  (replaces enterPortal / goBack)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * enterDNode — navigate into a D-node's mindmap.
+   * Switches activeMindMapId in the store, which triggers the load effect above.
+   * The previous mindmap is still accessible via the sidebar.
+   */
+  const enterDNode = useCallback((dnodeMindmapId) => {
+    selectDNodeMindMap(dnodeMindmapId);
+  }, [selectDNodeMindMap]);
+
+  /**
+   * goBackToMindMap — navigate back to a regular mindmap from a D-node mindmap.
+   * Since D-node navigation is just switching activeMindMapId, "back" means
+   * selecting whatever mindmap was previously active — handled by the sidebar.
+   * This is a convenience to return to the most recent regular mindmap.
+   */
+  const goBackToMindMap = useCallback(() => {
+    const regularMaps = useStore.getState().mindmaps;
+    if (regularMaps.length > 0) {
+      selectMindMap(regularMaps[0].mindmap_id);
+    }
+  }, [selectMindMap]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // D-NODE TRACKER: go-to-host handler
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * goToHostMindmap — called when user double-clicks an appearance block
+   * in the tracker node. Navigates to the host mindmap and pans to x/y.
+   */
+  const goToHostMindmap = useCallback((hostMindmapId, x, y) => {
+    // Switch to the host mindmap
+    selectMindMap(hostMindmapId);
+
+    // Pan to the D-node's position after a short delay to allow the
+    // mindmap to load into the React Flow instance
+    setTimeout(() => {
+      rfInstance.current?.setCenter(x, y, { zoom: 1, duration: 600 });
+    }, 150);
+  }, [selectMindMap]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ADD NODE (regular types)
+  // ───────────────────────────────────────────────────────────────────────────
+ 
+  /**
+   * getSpawnPosition — finds a clear position to place a new node.
+   *
+   * Steps:
+   *   1. Start at the center of the user's current viewport using
+   *      rfInstance.screenToFlowPosition on the canvas midpoint.
+   *   2. Check if any existing node is within MIN_DIST of that position.
+   *   3. If blocked, spiral outward in fixed steps until a clear spot is found.
+   *
+   * @param {object[]} existingNodes — current nodes array
+   * @returns {{ x: number, y: number }}
+   */
+  const getSpawnPosition = useCallback((existingNodes) => {
+    // Minimum distance between node centres before we consider them overlapping.
+    // 180px covers the widest standard node (ellipse ~140px + margin).
+    const MIN_DIST = 180;
+ 
+    // ── 1. Get the canvas viewport centre ──────────────────────────────────
+    let center = { x: 300, y: 200 }; // sensible fallback if RF not ready
+ 
+    if (rfInstance.current) {
+      const viewport = rfInstance.current.getViewport();
+      // The canvas DOM element — we need its pixel dimensions
+      const canvasEl = rfInstance.current.getNodes
+        ? document.querySelector('.react-flow__renderer')
+        : null;
+ 
+      if (canvasEl) {
+        const { width, height } = canvasEl.getBoundingClientRect();
+        // Convert the pixel centre of the visible area to flow coordinates
+        center = rfInstance.current.screenToFlowPosition({
+          x: width  / 2,
+          y: height / 2,
+        });
+      } else {
+        // Fallback: use viewport transform directly
+        // viewport = { x, y, zoom } where x/y is the canvas pan offset
+        center = {
+          x: (-viewport.x + 400) / viewport.zoom,
+          y: (-viewport.y + 300) / viewport.zoom,
+        };
+      }
+    }
+ 
+    // ── 2. Check for overlap at the centre position ────────────────────────
+    const isClear = (pos) =>
+      existingNodes.every((n) => {
+        const dx = (n.position?.x ?? 0) - pos.x;
+        const dy = (n.position?.y ?? 0) - pos.y;
+        return Math.sqrt(dx * dx + dy * dy) >= MIN_DIST;
+      });
+ 
+    if (isClear(center)) return center;
+ 
+    // ── 3. Spiral outward until we find a clear spot ───────────────────────
+    // Uses a rectangular spiral: right → down → left → up, growing each lap.
+    const STEP = MIN_DIST;
+    let x = center.x;
+    let y = center.y;
+    let step = 1;          // how many moves in the current direction
+    let direction = 0;     // 0=right, 1=down, 2=left, 3=up
+    const dx = [1, 0, -1,  0];
+    const dy = [0, 1,  0, -1];
+    let moves = 0;
+    let turns = 0;
+ 
+    // Cap iterations to avoid infinite loop on very dense canvases
+    for (let i = 0; i < 200; i++) {
+      x += dx[direction] * STEP;
+      y += dy[direction] * STEP;
+      moves++;
+ 
+      if (isClear({ x, y })) return { x, y };
+ 
+      // Spiral turn logic
+      if (moves === step) {
+        moves = 0;
+        direction = (direction + 1) % 4;
+        turns++;
+        // Every two turns, increase the step length
+        if (turns % 2 === 0) step++;
+      }
+    }
+ 
+    // Last resort — return centre offset by a random amount
+    return { x: center.x + Math.random() * 200, y: center.y + Math.random() * 200 };
+  }, [rfInstance]);
+ 
+  const addNode = useCallback((type) => {
+    // Read current nodes inside the setter to always get latest state
+    setNodes((prev) => {
+      const position = getSpawnPosition(prev);
+      const id = `${type}_${Date.now()}`;
+      const newNode = {
+        id,
+        type,
+        position,
+        data: {
+          label: type === 'table' ? '' : `New ${type}`,
+          tableData: type === 'table'
+            ? { headers: ['Header 1', 'Header 2'], rows: [['', '']] }
+            : null,
+        },
+        style: type === 'table' ? { width: 300, height: 200 } : {},
+      };
+      return [...prev, newNode];
+    });
+    setIsDirty(true);
+  }, [getSpawnPosition]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // PLACE D-NODE  (from DNodePanel drop or click)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * placeDNode — resolves a DNodePanel payload and adds the D-node to the canvas.
+   *
+   * payload types:
+   *   dnode_existing           — reuse an existing D-node record
+   *   dnode_new_from_mindmap   — create a new D-node using a mindmap's name
+   *   dnode_new_from_note      — create a new D-node using a note's name
+   *
+   * @param {object} payload  — from DNodePanel's drag/click data
+   * @param {{ x: number, y: number }} position — where to place it on canvas
+   */
+  const placeDNode = useCallback(async (payload, position) => {
+    if (!activeMindMapId) return;
+
+    let dnodeNodeId, dnodeName, dnodeMindmapId;
+
+    if (payload.type === 'dnode_existing') {
+      // Register this existing D-node in the current mindmap
+      dnodeNodeId    = payload.dnodeNodeId;
+      dnodeName      = payload.dnodeName;
+      dnodeMindmapId = payload.dnodeMindmapId;
+      await registerDNodeInMindmap(dnodeNodeId, activeMindMapId);
+
+    } else {
+      // Create a brand new D-node from a mindmap or note name
+      const name = payload.name;
+      const result = await addDNode(name, activeMindMapId);
+      dnodeNodeId    = result.nodeRecord.node_id;
+      dnodeName      = name;
+      dnodeMindmapId = result.nodeRecord.mind_map_id;
+    }
+
+    // Add the D-node React Flow node to the canvas
+    const rfNodeId = `dnode_${dnodeNodeId}_${Date.now()}`;
+    const newNode = {
+      id:       rfNodeId,
+      type:     'dnode',
+      position,
+      data: {
+        label:          dnodeName,
+        dnodeNodeId,
+        dnodeName,
+        dnodeMindmapId,
+        isDNode:        true,
+      },
+    };
+
+    setNodes((prev) => [...prev, newNode]);
+    setIsDirty(true);
+  }, [activeMindMapId, addDNode, registerDNodeInMindmap]);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // PROPPED NODES & EDGES
+  // Injects live callbacks into node data so nodes can communicate back.
+  // ───────────────────────────────────────────────────────────────────────────
+
   const proppedNodes = useMemo(() => {
-    return currentView.nodes.map(node => ({
+    return nodes.map((node) => ({
       ...node,
       data: {
         ...node.data,
-        enterPortal,
-        onDelete: (id) => setAllData(prev => {
-          const nodeToDelete = prev[currentLevelId].nodes.find(n => n.id === id);
-          if (nodeToDelete?.data?.isReference) return prev;
-          const newData = { ...prev };
-          newData[currentLevelId].nodes = newData[currentLevelId].nodes.filter(n => n.id !== id);
-          return newData;
-        }),
-        onLabelChange: (id, newValue) => {
-          setAllData((prev) => {
-            const newData = { ...prev };
-            const currentLevel = newData[currentLevelId];
-            if (!currentLevel) return prev;
 
-            const isTable = typeof newValue === 'object' && newValue !== null;
-            currentLevel.nodes = currentLevel.nodes.map((n) => {
-              if (n.id === id) {
-                return {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    ...(isTable ? { tableData: newValue } : { label: newValue })
-                  }
-                };
-              }
-              return n;
-            });
-
-            // Sync portal reference label
-            if (!isTable && newData[id]) {
-              newData[id].nodes = newData[id].nodes.map((n) =>
-                n.data.isReference ? { ...n, data: { ...n.data, label: newValue } } : n
-              );
+        // ── D-node callbacks ──────────────────────────────────────────────
+        ...(node.type === 'dnode' && {
+          onEnterDNode: enterDNode,
+          onDelete: async (id) => {
+            // Unregister this instance from the D-node record
+            const n = nodes.find((x) => x.id === id);
+            if (n?.data?.dnodeNodeId) {
+              await unregisterDNodeFromMindmap(n.data.dnodeNodeId, activeMindMapId);
             }
-
-            return newData;
-          });
-
-          if (typeof newValue === 'string') {
-            setPath((prevPath) =>
-              prevPath.map((step) => (step.id === id ? { ...step, name: newValue } : step))
-            );
-          }
-        },
-        onChangeColor: (id, bgColor) => setAllData(prev => ({
-          ...prev,
-          [currentLevelId]: {
-            ...prev[currentLevelId],
-            nodes: prev[currentLevelId].nodes.map(n =>
+            setNodes((prev) => prev.filter((x) => x.id !== id));
+            setIsDirty(true);
+          },
+          onChangeColor: (id, bgColor) => {
+            setNodes((prev) => prev.map((n) =>
               n.id === id ? { ...n, data: { ...n.data, bgColor } } : n
-            )
-          }
-        })),
-      }
+            ));
+            setIsDirty(true);
+          },
+        }),
+
+        // ── Tracker node callback ─────────────────────────────────────────
+        ...(node.type === 'dnode_tracker' && {
+          onGoToHost: goToHostMindmap,
+        }),
+
+        // ── Regular node callbacks ────────────────────────────────────────
+        ...(node.type !== 'dnode' && node.type !== 'dnode_tracker' && {
+          onLabelChange,
+          onDelete: (id) => {
+            setNodes((prev) => {
+              const target = prev.find((n) => n.id === id);
+              if (target?.data?.isReference) return prev; // can't delete reference nodes
+              return prev.filter((n) => n.id !== id);
+            });
+            setIsDirty(true);
+          },
+          onChangeColor: (id, bgColor) => {
+            setNodes((prev) => prev.map((n) =>
+              n.id === id ? { ...n, data: { ...n.data, bgColor } } : n
+            ));
+            setIsDirty(true);
+          },
+        }),
+      },
     }));
-  }, [currentView.nodes, currentLevelId, enterPortal]);
+  }, [nodes, activeMindMapId, enterDNode, onLabelChange,
+      unregisterDNodeFromMindmap, goToHostMindmap]);
 
   const proppedEdges = useMemo(() => {
-    return currentView.edges.map((edge) => {
-      const proppedEdge = {
+    return edges.map((edge) => {
+      const propped = {
         ...edge,
         data: {
           ...edge.data,
@@ -344,88 +436,96 @@ export function useMindMap() {
           onEdgeDelete,
         },
       };
-      if (edge.markerEnd)   proppedEdge.markerEnd   = edge.markerEnd;
-      if (edge.markerStart) proppedEdge.markerStart = edge.markerStart;
-      return proppedEdge;
+      if (edge.markerEnd)   propped.markerEnd   = edge.markerEnd;
+      if (edge.markerStart) propped.markerStart = edge.markerStart;
+      return propped;
     });
-  }, [currentView.edges, onEdgeLabelChange, onEdgeColorChange, onLineTypeChange, onEdgeDelete]);
+  }, [edges, onEdgeLabelChange, onEdgeColorChange, onLineTypeChange, onEdgeDelete]);
 
-  // ── Effects (your original) ───────────────────────────────────────────────
-
-  // Paste image from clipboard
+  // ── Paste image from clipboard ────────────────────────────────────────────
   useEffect(() => {
     const handlePaste = (event) => {
-      const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+      const items = (event.clipboardData || event.originalEvent?.clipboardData)?.items;
+      if (!items) return;
       for (const item of items) {
-        if (item.type.indexOf("image") !== -1) {
-          const file = item.getAsFile();
+        if (item.type.startsWith('image/')) {
           const reader = new FileReader();
           reader.onload = (e) => {
-            const id = `image_${Date.now()}`;
-            const newNode = {
-              id,
-              type: 'image',
-              position: { x: 200, y: 200 },
-              data: { url: e.target.result },
-              style: { width: 300, height: 200 }
-            };
-            setAllData(prev => {
-              const currentLevelData = prev[currentLevelId] || { nodes: [], edges: [] };
-              return {
-                ...prev,
-                [currentLevelId]: {
-                  ...currentLevelData,
-                  nodes: [...currentLevelData.nodes, newNode]
+            const img = new Image();
+            img.onload = () => {
+              const id = `image_${Date.now()}`;
+              
+              // Calculate initial size based on natural dimensions, capping at 600px
+              let width = img.naturalWidth;
+              let height = img.naturalHeight;
+              const maxDim = 600;
+              
+              if (width > maxDim || height > maxDim) {
+                const ratio = width / height;
+                if (width > height) {
+                  width = maxDim;
+                  height = maxDim / ratio;
+                } else {
+                  height = maxDim;
+                  width = maxDim * ratio;
                 }
-              };
-            });
+              }
+
+              setNodes((prev) => {
+                const position = getSpawnPosition(prev);
+                return [...prev, {
+                  id, type: 'image',
+                  position,
+                  data: {
+                    url: e.target.result,
+                    label: '',
+                  },
+                  style: { width, height },
+                }];
+              });
+              setIsDirty(true);
+            };
+            img.src = e.target.result;
           };
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(item.getAsFile());
         }
       }
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [currentLevelId]);
+  }, [getSpawnPosition]);
 
-  // Mark dirty whenever allData changes
+  // ── Warn before unload ────────────────────────────────────────────────────
   useEffect(() => {
-    if (Object.keys(allData).length > 0) setIsDirty(true);
-  }, [allData]);
-
-  // Warn before unload if unsaved (only relevant outside Tauri)
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
-        return e.returnValue;
-      }
+    const handler = (e) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
     };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
   return {
-    allData,
-    currentView,
-    path,
+    nodes,
+    edges,
+    proppedNodes,
+    proppedEdges,
     isDirty,
+    rfInstance,       // pass to <ReactFlow onInit={rfInstance.current = inst} />
     onNodesChange,
     onEdgesChange,
-    addNode,
     onConnect,
-    enterPortal,
-    goBack,
+    addNode,
+    placeDNode,
+    enterDNode,
+    goBackToMindMap,
+    goToHostMindmap,
     onEdgeLabelChange,
     onEdgeColorChange,
     onLineTypeChange,
     onEdgeDelete,
     onLabelChange,
-    proppedNodes,
-    proppedEdges,
     setIsDirty,
-    setAllData,
-    setPath,
+    setNodes,
+    setEdges,
   };
 }

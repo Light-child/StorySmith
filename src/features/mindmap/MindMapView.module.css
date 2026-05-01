@@ -1,24 +1,26 @@
-/* ─────────────────────────────────────────────────────────────────────────────
-   MindMapView.module.css
-   ───────────────────────────────────────────────────────────────────────────── */
+/* MindMapView.module.css */
 
+/* Root must fill the entire content area passed from WorkSpace */
 .root {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  width: 100%;
+  height: 100%;        /* fills WorkSpace .content which is 100vh */
   overflow: hidden;
   background: var(--bg-base);
 }
 
-/* Top header bar */
+/* Header bar — fixed height, never shrinks */
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
+  gap: 12px;
+  padding: 10px 20px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: wrap;
+  height: 48px;
 }
 
 .mapName {
@@ -28,21 +30,41 @@
   color: var(--text-primary);
 }
 
-.hint {
+.unsaved {
+  margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+  color: #f59e0b;
+  animation: pulse 2s infinite;
 }
 
-/* The React Flow container must fill the remaining space */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* Row containing the canvas + optional DNodePanel side by side */
+.canvasRow {
+  flex: 1;              /* takes all remaining height after the header */
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;        /* critical — prevents flex children ignoring overflow */
+}
+
+/* The React Flow wrapper — must have explicit width AND height */
 .canvas {
   flex: 1;
+  position: relative;
   width: 100%;
+  height: 100%;         /* fills .canvasRow */
   overflow: hidden;
+  min-height: 0;
+  min-width: 0;
 }
 
-/* Colour the React Flow control buttons to match the theme */
+/* React Flow control button theming */
 .canvas :global(.react-flow__controls-button) {
   background: var(--bg-elevated) !important;
   border-color: var(--border) !important;
@@ -52,15 +74,14 @@
 .canvas :global(.react-flow__controls-button:hover) {
   background: var(--bg-hover) !important;
 }
-
-/* Selected node highlight */
-.canvas :global(.react-flow__node.selected > div) {
+/* .canvas :global(.react-flow__node.selected > div) {
   box-shadow: 0 0 0 2px var(--accent);
-}
+} */
 
-/* ── Empty state ──────────────────────────────────────────────────────────── */
+/* Empty state */
 .empty {
-  flex: 1;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -75,4 +96,17 @@
   font-size: 0.82rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+
+/* D-node mindmap badge in header */
+.dnodeBadge {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #c084fc;
+  background: rgba(126, 34, 206, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  padding: 2px 8px;
+  border-radius: 999px;
 }

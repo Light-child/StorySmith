@@ -1,35 +1,37 @@
-// flowTypes.js — registers all custom node and edge types for React Flow,
-// and defines the initial node that appears on a brand new empty mindmap.
-// Import nodeTypes and edgeTypes into MindMapView and pass them to <ReactFlow>.
+// flowTypes.js — registers all custom node and edge types for React Flow.
+// IMPORTANT: these objects must be defined outside of any component —
+// if defined inside a render function, React Flow resets node positions
+// on every render.
 
-import EllipseNode   from './nodes/EllipseNode';
-import CircleNode    from './nodes/CircleNode';
-import RectangleNode from './nodes/RectangleNode';
-import ImageNode     from './nodes/ImageNode';
-import TableNode     from './nodes/TableNode';
-import CustomEdge    from './nodes/CustomEdge';
+import EllipseNode       from './nodes/EllipseNode';
+import CircleNode        from './nodes/CircleNode';
+import RectangleNode     from './nodes/RectangleNode';
+import ImageNode         from './nodes/ImageNode';
+import TableNode         from './nodes/TableNode';
+import DNodeNode         from './nodes/DNodeNode';         // D-node instance
+import DNodeTrackerNode  from './nodes/DNodeTrackerNode';  // tracker inside D-node mindmap
+import CustomEdge        from './nodes/CustomEdge';
 
-// React Flow requires these objects to be defined OUTSIDE of the component
-// that renders <ReactFlow> — if defined inside, it re-creates them on every
-// render and React Flow resets all node positions.
 export const nodeTypes = {
-  ellipse:   EllipseNode,
-  circle:    CircleNode,
-  rectangle: RectangleNode,
-  image:     ImageNode,
-  table:     TableNode,
+  ellipse:      EllipseNode,
+  circle:       CircleNode,
+  rectangle:    RectangleNode,
+  image:        ImageNode,
+  table:        TableNode,
+  dnode:        DNodeNode,         // appears in regular mindmaps
+  dnode_tracker: DNodeTrackerNode, // appears inside D-node mindmaps
 };
 
 export const edgeTypes = {
   custom: CustomEdge,
 };
 
-// The starting node for a brand new mindmap canvas
+// Starting node for a brand new regular mindmap
 export const initialNodes = [
   {
-    id: '1',
-    type: 'ellipse',
+    id:       '1',
+    type:     'ellipse',
     position: { x: 250, y: 5 },
-    data: { label: 'Double Click Me' },
+    data:     { label: 'Double Click Me' },
   },
 ];

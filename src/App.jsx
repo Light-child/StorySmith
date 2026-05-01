@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { initDB } from "./features/Database/db";
 import HomePage from "./pages/HomePage";
 import WorkSpace from "./pages/WorkSpace";
+import useStore from "./State/useStore";
 import "./App.css";
 
 export default function App() {
@@ -12,7 +13,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "default");
     initDB()
-      .then(() => setDbReady(true))
+      .then(async () => {
+        const { loadCanvases, loadDNodes } = useStore.getState();
+        await loadCanvases();
+        await loadDNodes();
+        setDbReady(true);})
       .catch((err) => {
         console.error("[StorySmith] DB init failed:", err);
         setDbError(err.message);

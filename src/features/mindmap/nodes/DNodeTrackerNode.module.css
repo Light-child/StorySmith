@@ -1,0 +1,114 @@
+/* DNodeTrackerNode.module.css */
+
+.root {
+  background: var(--bg-elevated, #242424);
+  border: 1.5px solid rgba(126, 34, 206, 0.5);
+  border-radius: var(--radius-md, 14px);
+  min-width: 220px;
+  padding: 0 0 10px;
+  overflow: hidden;
+  box-shadow: 0 0 16px rgba(126, 34, 206, 0.2);
+}
+
+.selected {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 1px #a855f7, 0 0 20px rgba(168, 85, 247, 0.3);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(126, 34, 206, 0.2);
+  border-bottom: 1px solid rgba(126, 34, 206, 0.3);
+}
+
+.badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #c084fc;
+  background: rgba(126, 34, 206, 0.3);
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: 0.72rem;
+  color: #d8b4fe;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Host list ──────────────────────────────────────────────────────────── */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+
+.empty {
+  font-size: 0.72rem;
+  color: #6b7280;
+  font-style: italic;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+/* ── Individual host block ──────────────────────────────────────────────── */
+.hostBlock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: rgba(126, 34, 206, 0.08);
+  border: 1px solid rgba(126, 34, 206, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+}
+
+.hostBlock:hover {
+  background: rgba(126, 34, 206, 0.2);
+  border-color: #a855f7;
+}
+
+.hostIcon {
+  font-size: 0.85rem;
+  color: #a855f7;
+  flex-shrink: 0;
+}
+
+.hostName {
+  font-size: 0.78rem;
+  color: #e9d5ff;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
+}
+
+.hostCoords {
+  font-size: 0.62rem;
+  color: #6b7280;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+/* ── Handles ────────────────────────────────────────────────────────────── */
+.handle {
+  width: 10px !important;
+  height: 10px !important;
+  background: #a855f7 !important;
+  border: 2px solid white !important;
+}
