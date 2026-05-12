@@ -25,6 +25,7 @@ export function useMindMap() {
   const unregisterDNodeFromMindmap = useStore((s) => s.unregisterDNodeFromMindmap);
   const selectDNodeMindMap = useStore((s) => s.selectDNodeMindMap);
   const selectMindMap      = useStore((s) => s.selectMindMap);
+  const selectNote         = useStore((s) => s.selectNote);
 
   // Keep persistMindMap in a ref so debounced saves never go stale
   const persistRef = useRef(persistMindMap);
@@ -156,13 +157,20 @@ export function useMindMap() {
   // ───────────────────────────────────────────────────────────────────────────
 
   /**
-   * enterDNode — navigate into a D-node's mindmap.
-   * Switches activeMindMapId in the store, which triggers the load effect above.
-   * The previous mindmap is still accessible via the sidebar.
+   * enterDNode — navigate into a D-node's content.
+   * If it's linked to a Note, switches to Note view.
+   * If it has a mindmap, switches to that mindmap.
    */
-  const enterDNode = useCallback((dnodeMindmapId) => {
-    selectDNodeMindMap(dnodeMindmapId);
-  }, [selectDNodeMindMap]);
+  const enterDNode = useCallback((dnodeNodeId) => {
+    const { dNodes } = useStore.getState();
+    const nodeRec = dNodes.find((d) => d.node_id === dnodeNodeId);
+    
+    if (nodeRec?.source_type === "note" && nodeRec.source_id) {
+      selectNote(nodeRec.source_id);
+    } else if (nodeRec?.mind_map_id) {
+      selectDNodeMindMap(nodeRec.mind_map_id);
+    }
+  }, [selectNote, selectDNodeMindMap]);
 
   /**
    * goBackToMindMap — navigate back to a regular mindmap from a D-node mindmap.
@@ -328,6 +336,14 @@ export function useMindMap() {
   const placeDNode = useCallback(async (payload, position) => {
     if (!activeMindMapId) return;
 
+    // ── Validation: Prevent circular references ─────────────────────────────
+    // A D-node cannot be added to the mindmap it represents (sourceId)
+    // or into its own private D-node mindmap (dnodeMindmapId).
+    if (payload.sourceId === activeMindMapId || payload.dnodeMindmapId === activeMindMapId) {
+      console.warn("[StorySmith] Circular reference blocked: Cannot add a D-node to its own source mindmap.");
+      return;
+    }
+
     let dnodeNodeId, dnodeName, dnodeMindmapId;
 
     if (payload.type === 'dnode_existing') {
@@ -340,7 +356,9 @@ export function useMindMap() {
     } else {
       // Create a brand new D-node from a mindmap or note name
       const name = payload.name;
-      const result = await addDNode(name, activeMindMapId);
+      const sourceId = payload.sourceId; 
+      const type = payload.type === 'dnode_new_from_mindmap' ? 'mindmap' : 'note';
+      const result = await addDNode(name, activeMindMapId, sourceId, type);
       dnodeNodeId    = result.nodeRecord.node_id;
       dnodeName      = name;
       dnodeMindmapId = result.nodeRecord.mind_map_id;
@@ -418,11 +436,55 @@ export function useMindMap() {
             ));
             setIsDirty(true);
           },
+          onPromoteToDNode: async (id, label) => {
+            if (!activeMindMapId) return;
+            console.log("[StorySmith] Promoting node to D-node:", { id, label });
+
+            try {
+              // 1. Create the D-node via the store (handles DB + state)
+              const result = await addDNode(label, activeMindMapId);
+              const { nodeRecord } = result;
+              console.log("[StorySmith] D-node created successfully:", nodeRecord);
+
+              // 2. Transform the local node into a D-node instance
+              let updatedNodes;
+              setNodes((prev) => {
+                updatedNodes = prev.map((n) => {
+                  if (n.id !== id) return n;
+                  return {
+                    ...n,
+                    type: 'dnode',
+                    data: {
+                      ...n.data,
+                      label:          label,
+                      dnodeNodeId:    nodeRecord.node_id,
+                      dnodeName:      label,
+                      dnodeMindmapId: nodeRecord.mind_map_id,
+                      isDNode:        true,
+                    }
+                  };
+                });
+                return updatedNodes;
+              });
+
+              // 3. FORCE SAVE the current mindmap before leaving
+              // This ensures the node's transformation is persisted
+              setIsDirty(false); // clear dirty flag before manual save to prevent double-save
+              await persistMindMap(activeMindMapId, { nodes: updatedNodes, edges });
+              console.log("[StorySmith] Host mindmap saved with new D-node.");
+
+              // 4. Immediately navigate into the new D-node workspace
+              enterDNode(nodeRecord.node_id);
+            } catch (err) {
+              console.error("[StorySmith] Promotion failed:", err);
+              alert("Failed to create portal. Check console for details.");
+            }
+          },
         }),
       },
     }));
   }, [nodes, activeMindMapId, enterDNode, onLabelChange,
-      unregisterDNodeFromMindmap, goToHostMindmap]);
+      unregisterDNodeFromMindmap, goToHostMindmap, addDNode, persistMindMap]);
 
   const proppedEdges = useMemo(() => {
     return edges.map((edge) => {

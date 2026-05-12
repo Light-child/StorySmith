@@ -87,11 +87,13 @@ export default function HomePage() {
   }, [loadCanvases]);
 
   // Handle creating a new canvas with a default name
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const name = `Canvas ${canvases.length + 1}`;
-    const canvas = addCanvas(name);
+    const canvas = await addCanvas(name);
     // Jump straight into the new workspace
-    navigate(`/workspace/${canvas.id}`);
+    if (canvas && canvas.id) {
+      navigate(`/workspace/${canvas.id}`);
+    }
   };
 
   // Handle clicking an existing canvas

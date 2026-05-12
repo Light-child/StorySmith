@@ -64,12 +64,13 @@ function MindMapCanvas() {
 
     const payload = JSON.parse(raw);
 
-    // Convert screen coordinates to React Flow canvas coordinates
-    const bounds = reactFlowWrapper.current?.getBoundingClientRect();
+    // React Flow 11 screenToFlowPosition expects absolute screen coordinates
+    // (event.clientX/Y). Subtracting bounds is actually counter-productive
+    // unless the library version were much older.
     const position = rfInstance.current
       ? rfInstance.current.screenToFlowPosition({
-          x: event.clientX - (bounds?.left ?? 0),
-          y: event.clientY - (bounds?.top  ?? 0),
+          x: event.clientX,
+          y: event.clientY,
         })
       : { x: event.clientX - 200, y: event.clientY - 100 };
 

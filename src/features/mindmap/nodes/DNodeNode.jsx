@@ -33,11 +33,11 @@ const DNodeNode = ({ data, id, selected }) => {
     { name: "Red",       key: "red"       },
   ];
 
-  // Double-click navigates into the D-node's mindmap
+  // Double-click navigates into the D-node's content
   const handleDoubleClick = (e) => {
     e.stopPropagation();
-    if (data.onEnterDNode && data.dnodeMindmapId) {
-      data.onEnterDNode(data.dnodeMindmapId);
+    if (data.onEnterDNode && data.dnodeNodeId) {
+      data.onEnterDNode(data.dnodeNodeId);
     }
   };
 
@@ -73,9 +73,9 @@ const DNodeNode = ({ data, id, selected }) => {
         <div className="flex gap-2">
           {/* Enter the D-node mindmap */}
           <button
-            onClick={() => data.onEnterDNode?.(data.dnodeMindmapId)}
+            onClick={() => data.onEnterDNode?.(data.dnodeNodeId)}
             className="p-1 rounded text-xs nodrag text-indigo-400 hover:bg-gray-500/20 font-bold"
-            title="Open D-Node mindmap"
+            title="Open D-Node content"
           >
             👁️
           </button>

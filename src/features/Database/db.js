@@ -28,7 +28,7 @@
 
 import PouchDB from "pouchdb";
 
-let db = null;
+const db = new PouchDB("storysmith");
 
 const PREFIX = {
   CANVAS:  "canvas::",
@@ -42,7 +42,6 @@ const PREFIX = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function initDB() {
-  db = new PouchDB("storysmith");
   console.log("[StorySmith DB] PouchDB ready ✓", await db.info());
 }
 
@@ -161,6 +160,14 @@ export async function getNotesForCanvas(canvasId) {
     .sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
 }
 
+/**
+ * getAllNotes — returns all notes across all canvases.
+ */
+export async function getAllNotes() {
+  const docs = await fetchByPrefix(PREFIX.NOTE);
+  return docs.sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
+}
+
 export async function getNote(noteId) {
   try { return await db.get(PREFIX.NOTE + noteId); }
   catch { return null; }
@@ -212,6 +219,16 @@ export async function getMindMapsForCanvas(canvasId) {
   const docs = await fetchByPrefix(PREFIX.MINDMAP);
   return docs
     .filter((d) => d.canvas_id === canvasId && !d.is_dnode)
+    .sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
+}
+
+/**
+ * getAllMindMaps — returns all regular (non-D-node) mindmaps across all canvases.
+ */
+export async function getAllMindMaps() {
+  const docs = await fetchByPrefix(PREFIX.MINDMAP);
+  return docs
+    .filter((d) => !d.is_dnode)
     .sort((a, b) => new Date(b.date_last_modified) - new Date(a.date_last_modified));
 }
 
@@ -282,8 +299,14 @@ export async function getAllDNodeMindMaps() {
  *
  * @param {string} name       — the D-node's global name
  * @param {string} hostMindmapId — the mindmap the D-node is first placed in
+ * @param {string} sourceId   — (optional) the ID of the MindMap or Note it was created from
+ * @param {string} sourceType — (optional) "note" | "mindmap"
  */
-export async function createDNode(name, hostMindmapId) {
+export async function createDNode(name, hostMindmapId, sourceId, sourceType) {
+  if (!name || typeof name !== "string") {
+    throw new Error("D-node name is required and must be a string.");
+  }
+
   // ── 1. Duplicate check ──────────────────────────────────────────────────
   const existing = await getDNodeByName(name);
   if (existing) {
@@ -291,58 +314,85 @@ export async function createDNode(name, hostMindmapId) {
     return await _addHostMindmapToDNode(existing.node_id, hostMindmapId);
   }
 
-  // ── 2. Create the D-node mindmap ────────────────────────────────────────
-  const mindmap_id = uuid();
-  const node_id    = uuid();
-  const ts         = now();
+  // ── 2. Determine source canvas ownership and type ────────────────────────
+  let sourceCanvasId = null;
+  let isNote = sourceType === "note";
 
-  // ── 3. Build the two starter nodes ──────────────────────────────────────
-  // a. Fixed identity ellipse — non-draggable, non-deletable, shows the name
-  const identityNode = {
-    id:       `dnode-identity-${node_id}`,
-    type:     "ellipse",
-    position: { x: 300, y: 80 },
-    draggable: false,
-    deletable: false,
-    data: {
-      label:       name,
-      isReference: true,    // reuses the existing isReference flag to block editing
-      isDNodeIdentity: true, // extra flag so we can style it distinctly
-    },
-  };
+  if (sourceId) {
+    // If type not provided, infer it
+    if (!sourceType) {
+      const note = await getNote(sourceId);
+      if (note) {
+        sourceCanvasId = note.canvas_id;
+        isNote = true;
+      } else {
+        const mm = await getMindMap(sourceId);
+        if (mm) sourceCanvasId = mm.canvas_id;
+      }
+    } else {
+      // Type provided — just fetch canvas_id
+      const src = isNote ? await getNote(sourceId) : await getMindMap(sourceId);
+      if (src) sourceCanvasId = src.canvas_id;
+    }
+  } else if (hostMindmapId) {
+    // No source object — infer canvas from the map where it's being placed
+    const host = await getMindMap(hostMindmapId);
+    if (host) sourceCanvasId = host.canvas_id;
+  }
 
-  // b. Appearances tracker — custom node type that lists all host mindmaps
-  const trackerNode = {
-    id:       `dnode-tracker-${node_id}`,
-    type:     "dnode_tracker",
-    position: { x: 100, y: 220 },
-    draggable: true,
-    data: {
-      dnodeId:          node_id,
-      dnodeName:        name,
-      // hostMindmaps is an array of { mindmap_id, mindmap_name, x, y }
-      // The tracker node reads this to render clickable appearance blocks.
-      // We populate the first entry now; subsequent ones are added via
-      // updateDNodeTrackerInMindmap() whenever a new host is added.
-      hostMindmaps: [],
-    },
-  };
+  const node_id = uuid();
+  const ts = now();
 
-  const mindmapDoc = {
-    _id:                PREFIX.MINDMAP + mindmap_id,
-    type:               "mindmap",
-    mindmap_id,
-    mindmap_name:       name,   // same name as the D-node
-    canvas_id:          null,   // not owned by any canvas
-    is_dnode:           true,
-    node_id,                    // back-reference to the node record
-    date_last_modified: ts,
-    date_created:       ts,
-    essence: {
-      nodes: [identityNode, trackerNode],
-      edges: [],
-    },
-  };
+  let mindmap_id = null;
+  let mindmapDoc = null;
+
+  // ── 3. Create the D-node mindmap ONLY if it's NOT a note ─────────────────
+  if (!isNote) {
+    mindmap_id = uuid();
+
+    // a. Fixed identity ellipse
+    const identityNode = {
+      id:       `dnode-identity-${node_id}`,
+      type:     "ellipse",
+      position: { x: 300, y: 80 },
+      draggable: false,
+      deletable: false,
+      data: {
+        label:       name,
+        isReference: true,
+        isDNodeIdentity: true,
+      },
+    };
+
+    // b. Appearances tracker
+    const trackerNode = {
+      id:       `dnode-tracker-${node_id}`,
+      type:     "dnode_tracker",
+      position: { x: 100, y: 220 },
+      draggable: true,
+      data: {
+        dnodeId:          node_id,
+        dnodeName:        name,
+        hostMindmaps: [],
+      },
+    };
+
+    mindmapDoc = {
+      _id:                PREFIX.MINDMAP + mindmap_id,
+      type:               "mindmap",
+      mindmap_id,
+      mindmap_name:       name,
+      canvas_id:          sourceCanvasId,
+      is_dnode:           true,
+      node_id,
+      date_last_modified: ts,
+      date_created:       ts,
+      essence: {
+        nodes: [identityNode, trackerNode],
+        edges: [],
+      },
+    };
+  }
 
   // ── 4. Create the node record ────────────────────────────────────────────
   const nodeDoc = {
@@ -350,22 +400,87 @@ export async function createDNode(name, hostMindmapId) {
     type:               "node",
     node_id,
     name,
-    canvas_id:          null,           // global — not tied to a canvas
-    mind_map_id:        mindmap_id,     // the D-node mindmap this represents
-    list_of_mindmap_id: hostMindmapId   // mindmaps this D-node appears in
-      ? [hostMindmapId]
-      : [],
+    source_id:          sourceId || null,
+    source_type:        isNote ? "note" : "mindmap",
+    canvas_id:          sourceCanvasId,
+    mind_map_id:        mindmap_id,
+    list_of_mindmap_id: hostMindmapId ? [hostMindmapId] : [],
   };
 
-  // Write both in parallel
-  await Promise.all([db.put(mindmapDoc), db.put(nodeDoc)]);
+  const puts = [db.put(nodeDoc)];
+  if (mindmapDoc) puts.push(db.put(mindmapDoc));
 
-  // ── 5. Add the host mindmap to the tracker after node_id is known ────────
-  if (hostMindmapId) {
+  await Promise.all(puts);
+
+  // ── 5. Sync tracker ONLY if there is a mindmap ──────────────────────────
+  if (mindmap_id && hostMindmapId) {
     await _syncTrackerNode(mindmap_id, node_id, nodeDoc.list_of_mindmap_id);
   }
 
   return { nodeRecord: nodeDoc, mindmap: mindmapDoc };
+}
+
+/**
+ * promoteMindMapToDNode — converts an existing regular mindmap into a D-node.
+ */
+export async function promoteMindMapToDNode(mindmapId, hostMindmapId) {
+  const mindmapDoc = await db.get(PREFIX.MINDMAP + mindmapId);
+
+  // ── 1. Duplicate check ──────────────────────────────────────────────────
+  // If a D-node with this name already exists, we should probably 
+  // just link to it rather than creating a new one.
+  const existing = await getDNodeByName(mindmapDoc.mindmap_name);
+  if (existing) {
+    return await _addHostMindmapToDNode(existing.node_id, hostMindmapId);
+  }
+
+  const node_id = uuid();
+  const ts = now();
+
+  // 2. Build the tracker node
+  const trackerNode = {
+    id:       `dnode-tracker-${node_id}`,
+    type:     "dnode_tracker",
+    position: { x: 100, y: 220 },
+    draggable: true,
+    data: {
+      dnodeId:          node_id,
+      dnodeName:        mindmapDoc.mindmap_name,
+      hostMindmaps: [],
+    },
+  };
+
+  // 3. Update mindmap doc
+  const updatedMindmap = {
+    ...mindmapDoc,
+    is_dnode:           true,
+    node_id,
+    date_last_modified: ts,
+    essence: {
+      ...mindmapDoc.essence,
+      nodes: [...(mindmapDoc.essence.nodes || []), trackerNode],
+    },
+  };
+
+  // 4. Create node record
+  const nodeDoc = {
+    _id:                PREFIX.NODE + node_id,
+    type:               "node",
+    node_id,
+    name:               mindmapDoc.mindmap_name,
+    source_id:          mindmapId,
+    canvas_id:          mindmapDoc.canvas_id, // BELONGS TO SOURCE CANVAS
+    mind_map_id:        mindmapId,
+    list_of_mindmap_id: hostMindmapId ? [hostMindmapId] : [],
+  };
+
+  await Promise.all([db.put(updatedMindmap), db.put(nodeDoc)]);
+
+  if (hostMindmapId) {
+    await _syncTrackerNode(mindmapId, node_id, nodeDoc.list_of_mindmap_id);
+  }
+
+  return { nodeRecord: nodeDoc, mindmap: updatedMindmap };
 }
 
 /**
@@ -388,8 +503,10 @@ export async function unregisterDNodeFromMindmap(dnodeNodeId, hostMindmapId) {
   const updated = nodeDoc.list_of_mindmap_id.filter((id) => id !== hostMindmapId);
   const savedNode = await db.put({ ...nodeDoc, list_of_mindmap_id: updated });
 
-  // Refresh the tracker node in the D-node's own mindmap
-  await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, updated);
+  // Refresh the tracker node in the D-node's own mindmap (if it has one)
+  if (nodeDoc.mind_map_id) {
+    await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, updated);
+  }
   return savedNode;
 }
 
@@ -405,24 +522,27 @@ export async function renameDNode(dnodeNodeId, newName) {
   }
 
   const nodeDoc = await db.get(PREFIX.NODE + dnodeNodeId);
-  const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
+  const puts = [db.put({ ...nodeDoc, name: newName })];
 
-  // Update identity node label inside the mindmap essence
-  const updatedNodes = mindmapDoc.essence.nodes.map((n) =>
-    n.data?.isDNodeIdentity
-      ? { ...n, data: { ...n.data, label: newName } }
-      : n
-  );
+  if (nodeDoc.mind_map_id) {
+    const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
 
-  await Promise.all([
-    db.put({ ...nodeDoc, name: newName }),
-    db.put({
+    // Update identity node label inside the mindmap essence
+    const updatedNodes = mindmapDoc.essence.nodes.map((n) =>
+      n.data?.isDNodeIdentity
+        ? { ...n, data: { ...n.data, label: newName } }
+        : n
+    );
+
+    puts.push(db.put({
       ...mindmapDoc,
       mindmap_name: newName,
       essence: { ...mindmapDoc.essence, nodes: updatedNodes },
       date_last_modified: now(),
-    }),
-  ]);
+    }));
+  }
+
+  await Promise.all(puts);
 }
 
 /**
@@ -442,12 +562,13 @@ export async function deleteDNodeMindmap(dnodeNodeId) {
     )
   );
 
-  // Delete the mindmap and the node record
-  const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
-  await Promise.all([
-    db.remove(mindmapDoc),
-    db.remove(nodeDoc),
-  ]);
+  // Delete the node record and the mindmap (if it has one)
+  const deletes = [db.remove(nodeDoc)];
+  if (nodeDoc.mind_map_id) {
+    const mindmapDoc = await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id);
+    deletes.push(db.remove(mindmapDoc));
+  }
+  await Promise.all(deletes);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -466,11 +587,17 @@ async function _addHostMindmapToDNode(dnodeNodeId, hostMindmapId) {
     : [...nodeDoc.list_of_mindmap_id, hostMindmapId];
 
   await db.put({ ...nodeDoc, list_of_mindmap_id: list });
-  await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, list);
+
+  // Sync tracker ONLY if there is an associated mindmap
+  if (nodeDoc.mind_map_id) {
+    await _syncTrackerNode(nodeDoc.mind_map_id, dnodeNodeId, list);
+  }
 
   return {
     nodeRecord: { ...nodeDoc, list_of_mindmap_id: list },
-    mindmap: await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id),
+    mindmap: nodeDoc.mind_map_id 
+      ? await db.get(PREFIX.MINDMAP + nodeDoc.mind_map_id)
+      : null,
   };
 }
 

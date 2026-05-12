@@ -22,12 +22,13 @@ import {
   // Canvas
   getAllCanvases, createCanvas, updateCanvasName, deleteCanvas,
   // Notes
-  getNotesForCanvas, createNote, saveNote, deleteNote,
+  getNotesForCanvas, createNote, saveNote, deleteNote, getAllNotes,
   // MindMaps
-  getMindMapsForCanvas, createMindMap, saveMindMap, deleteMindMap,
+  getMindMapsForCanvas, createMindMap, saveMindMap, deleteMindMap, getAllMindMaps,
   // D-Nodes
   getAllDNodes, getAllDNodeMindMaps,
   createDNode       as dbCreateDNode,
+  promoteMindMapToDNode as dbPromoteMindMap,
   registerDNodeInMindmap  as dbRegisterDNode,
   unregisterDNodeFromMindmap as dbUnregisterDNode,
   renameDNode       as dbRenameDNode,
@@ -44,6 +45,8 @@ const useStore = create((set, get) => ({
   // ─── Content (per active canvas) ─────────────────────────────────────────
   notes:           [],
   mindmaps:        [],       // regular mindmaps only
+  allNotes:        [],       // global list for D-node picker
+  allMindmaps:     [],       // global list for D-node picker
   activeNoteId:    null,
   activeMindMapId: null,
 
@@ -146,6 +149,11 @@ const useStore = create((set, get) => ({
           ? { ...n, essence: tiptapJson, note_name: name ?? n.note_name, date_last_modified: ts }
           : n
       ),
+      allNotes: s.allNotes.map((n) =>
+        n.note_id === noteId
+          ? { ...n, essence: tiptapJson, note_name: name ?? n.note_name, date_last_modified: ts }
+          : n
+      ),
     }));
   },
 
@@ -153,7 +161,8 @@ const useStore = create((set, get) => ({
     await deleteNote(noteId);
     set((s) => {
       const notes = s.notes.filter((n) => n.note_id !== noteId);
-      return { notes, activeNoteId: notes[0]?.note_id || null };
+      const allNotes = s.allNotes.filter((n) => n.note_id !== noteId);
+      return { notes, allNotes, activeNoteId: notes[0]?.note_id || null };
     });
   },
 
@@ -167,6 +176,7 @@ const useStore = create((set, get) => ({
     const mm = await createMindMap(activeCanvasId, name);
     set((s) => ({
       mindmaps:        [mm, ...s.mindmaps],
+      allMindmaps:     [mm, ...s.allMindmaps],
       activeMindMapId: mm.mindmap_id,
       activeView:      "mindmap",
     }));
@@ -186,6 +196,11 @@ const useStore = create((set, get) => ({
           ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
           : m
       ),
+      allMindmaps: s.allMindmaps.map((m) =>
+        m.mindmap_id === mindmapId
+          ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
+          : m
+      ),
       // Also update dNodeMindMaps if this is a D-node mindmap
       dNodeMindMaps: s.dNodeMindMaps.map((m) =>
         m.mindmap_id === mindmapId
@@ -199,7 +214,8 @@ const useStore = create((set, get) => ({
     await deleteMindMap(mindmapId);
     set((s) => {
       const mindmaps = s.mindmaps.filter((m) => m.mindmap_id !== mindmapId);
-      return { mindmaps, activeMindMapId: mindmaps[0]?.mindmap_id || null };
+      const allMindmaps = s.allMindmaps.filter((m) => m.mindmap_id !== mindmapId);
+      return { mindmaps, allMindmaps, activeMindMapId: mindmaps[0]?.mindmap_id || null };
     });
   },
 
@@ -212,11 +228,13 @@ const useStore = create((set, get) => ({
    * Call once on app start alongside loadCanvases.
    */
   loadDNodes: async () => {
-    const [dNodes, dNodeMindMaps] = await Promise.all([
+    const [dNodes, dNodeMindMaps, allNotes, allMindmaps] = await Promise.all([
       getAllDNodes(),
       getAllDNodeMindMaps(),
+      getAllNotes(),
+      getAllMindMaps(),
     ]);
-    set({ dNodes, dNodeMindMaps });
+    set({ dNodes, dNodeMindMaps, allNotes, allMindmaps });
   },
 
   /**
@@ -224,24 +242,46 @@ const useStore = create((set, get) => ({
    *
    * @param {string} name          — the D-node's global name
    * @param {string} hostMindmapId — the mindmap it's being placed into
+   * @param {string} sourceId      — (optional) the ID of the MindMap or Note it was created from
+   * @param {string} type          — (optional) "mindmap" | "note"
    * @returns {{ nodeRecord, mindmap }} — the created/updated records
    */
-  addDNode: async (name, hostMindmapId) => {
-    const result = await dbCreateDNode(name, hostMindmapId);
+  addDNode: async (name, hostMindmapId, sourceId, type) => {
+    let result;
+    if (type === "mindmap" && sourceId) {
+      // Promotion flow: convert existing mindmap to D-node
+      result = await dbPromoteMindMap(sourceId, hostMindmapId);
+    } else {
+      // Standard flow: create a new D-node mindmap
+      result = await dbCreateDNode(name, hostMindmapId, sourceId, type);
+    }
+
     const { nodeRecord, mindmap } = result;
 
     set((s) => {
       // If this D-node already existed, update existing records
       const existingNode = s.dNodes.find((d) => d.node_id === nodeRecord.node_id);
-      const existingMM   = s.dNodeMindMaps.find((m) => m.mindmap_id === mindmap.mindmap_id);
+      const existingMM   = mindmap 
+        ? s.dNodeMindMaps.find((m) => m.mindmap_id === mindmap.mindmap_id)
+        : null;
+
+      // If we promoted a mindmap, remove it from the regular mindmaps list
+      const mindmaps = (type === "mindmap" && sourceId)
+        ? s.mindmaps.filter(m => m.mindmap_id !== sourceId)
+        : s.mindmaps;
+
+      const updatedDNodeMindMaps = mindmap 
+        ? (existingMM
+            ? s.dNodeMindMaps.map((m) => m.mindmap_id === mindmap.mindmap_id ? mindmap : m)
+            : [...s.dNodeMindMaps, mindmap])
+        : s.dNodeMindMaps;
 
       return {
+        mindmaps,
         dNodes: existingNode
           ? s.dNodes.map((d) => d.node_id === nodeRecord.node_id ? nodeRecord : d)
           : [...s.dNodes, nodeRecord],
-        dNodeMindMaps: existingMM
-          ? s.dNodeMindMaps.map((m) => m.mindmap_id === mindmap.mindmap_id ? mindmap : m)
-          : [...s.dNodeMindMaps, mindmap],
+        dNodeMindMaps: updatedDNodeMindMaps,
       };
     });
 

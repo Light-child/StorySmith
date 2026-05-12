@@ -32,10 +32,14 @@ export default function WorkSpace() {
   // When the component mounts (or the URL canvasId changes),
   // tell the store to load notes + mindmaps for this canvas.
   useEffect(() => {
+    if (canvasId === "undefined") {
+      navigate("/");
+      return;
+    }
     if (canvasId && canvasId !== activeCanvasId) {
       selectCanvas(canvasId);
     }
-  }, [canvasId, activeCanvasId, selectCanvas]);
+  }, [canvasId, activeCanvasId, selectCanvas, navigate]);
 
   return (
     <div className={styles.root}>

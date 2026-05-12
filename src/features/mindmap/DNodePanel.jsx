@@ -57,37 +57,31 @@ export default function DNodePanel({ onClose, onPlaceDNode }) {
   // Store data
   const dNodes          = useStore((s) => s.dNodes);
   const dNodeMindMaps   = useStore((s) => s.dNodeMindMaps);
-  const mindmaps        = useStore((s) => s.mindmaps);       // regular mindmaps
-  const notes           = useStore((s) => s.notes);
+  const mindmaps        = useStore((s) => s.mindmaps);       // current canvas regular mindmaps
+  const notes           = useStore((s) => s.notes);          // current canvas notes
+  const allMindmaps     = useStore((s) => s.allMindmaps);     // global regular mindmaps
+  const allNotes        = useStore((s) => s.allNotes);        // global notes
   const canvases        = useStore((s) => s.canvases);
   const activeCanvasId  = useStore((s) => s.activeCanvasId);
   const activeMindMapId = useStore((s) => s.activeMindMapId);
 
   // ── Split D-nodes into "this canvas" vs "other canvases" ─────────────────
-  // A D-node "belongs" to this canvas if it appears in at least one of
-  // the current canvas's mindmaps.
-  const currentCanvasMindmapIds = useMemo(
-    () => new Set(mindmaps.map((m) => m.mindmap_id)),
-    [mindmaps]
-  );
-
   const localDNodes = useMemo(
-    () => dNodes.filter((d) =>
-      d.list_of_mindmap_id.some((id) => currentCanvasMindmapIds.has(id))
-    ),
-    [dNodes, currentCanvasMindmapIds]
+    () => dNodes.filter((d) => d.canvas_id === activeCanvasId),
+    [dNodes, activeCanvasId]
   );
 
   const otherDNodes = useMemo(
-    () => dNodes.filter((d) =>
-      !d.list_of_mindmap_id.some((id) => currentCanvasMindmapIds.has(id))
-    ),
-    [dNodes, currentCanvasMindmapIds]
+    () => dNodes.filter((d) => d.canvas_id !== activeCanvasId),
+    [dNodes, activeCanvasId]
   );
 
   // ── Search filter ─────────────────────────────────────────────────────────
   const q = search.toLowerCase();
-  const filterLabel = (label) => !q || label.toLowerCase().includes(q);
+  const filterLabel = (label) => {
+    if (!label) return !q; // if no label, only show if search is empty
+    return !q || label.toLowerCase().includes(q);
+  };
 
   // ── Canvas name lookup ───────────────────────────────────────────────────
   const canvasName = (id) =>
@@ -143,12 +137,14 @@ export default function DNodePanel({ onClose, onPlaceDNode }) {
                 dnodeNodeId:   d.node_id,
                 dnodeName:     d.name,
                 dnodeMindmapId: d.mind_map_id,
+                sourceId:      d.source_id,
               })}
               onClick={() => handleClick({
                 type:          "dnode_existing",
                 dnodeNodeId:   d.node_id,
                 dnodeName:     d.name,
                 dnodeMindmapId: d.mind_map_id,
+                sourceId:      d.source_id,
               })}
             />
           ))}
@@ -170,12 +166,14 @@ export default function DNodePanel({ onClose, onPlaceDNode }) {
                 dnodeNodeId:   d.node_id,
                 dnodeName:     d.name,
                 dnodeMindmapId: d.mind_map_id,
+                sourceId:      d.source_id,
               })}
               onClick={() => handleClick({
                 type:          "dnode_existing",
                 dnodeNodeId:   d.node_id,
                 dnodeName:     d.name,
                 dnodeMindmapId: d.mind_map_id,
+                sourceId:      d.source_id,
               })}
             />
           ))}
@@ -183,15 +181,15 @@ export default function DNodePanel({ onClose, onPlaceDNode }) {
 
         {/* 3. Regular mindmaps — drag to create a new D-node from one */}
         <Section title="All mindmaps" defaultOpen={false}>
-          {mindmaps.filter((m) => filterLabel(m.mindmap_name)).length === 0 && (
+          {allMindmaps.filter((m) => filterLabel(m.mindmap_name)).length === 0 && (
             <p className={styles.empty}>No mindmaps</p>
           )}
-          {mindmaps.filter((m) => filterLabel(m.mindmap_name)).map((m) => (
+          {allMindmaps.filter((m) => filterLabel(m.mindmap_name)).map((m) => (
             <DraggableItem
               key={m.mindmap_id}
               label={m.mindmap_name}
               badge="M"
-              subtitle="Create D-node from this mindmap"
+              subtitle={m.canvas_id !== activeCanvasId ? `from ${canvasName(m.canvas_id)}` : ""}
               onDragStart={(e) => handleDragStart(e, {
                 type:     "dnode_new_from_mindmap",
                 name:     m.mindmap_name,
@@ -208,15 +206,15 @@ export default function DNodePanel({ onClose, onPlaceDNode }) {
 
         {/* 4. Notes — drag to create a new D-node from one */}
         <Section title="All notes" defaultOpen={false}>
-          {notes.filter((n) => filterLabel(n.note_name)).length === 0 && (
+          {allNotes.filter((n) => filterLabel(n.note_name)).length === 0 && (
             <p className={styles.empty}>No notes</p>
           )}
-          {notes.filter((n) => filterLabel(n.note_name)).map((n) => (
+          {allNotes.filter((n) => filterLabel(n.note_name)).map((n) => (
             <DraggableItem
               key={n.note_id}
               label={n.note_name}
               badge="N"
-              subtitle="Create D-node from this note"
+              subtitle={n.canvas_id !== activeCanvasId ? `from ${canvasName(n.canvas_id)}` : ""}
               onDragStart={(e) => handleDragStart(e, {
                 type:     "dnode_new_from_note",
                 name:     n.note_name,

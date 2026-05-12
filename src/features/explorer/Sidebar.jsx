@@ -8,7 +8,7 @@
  * are global (not canvas-owned) and behave differently from regular mindmaps.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import useStore from "../../State/useStore";
 import styles from "./Sidebar.module.css";
 
@@ -97,9 +97,33 @@ export default function Sidebar({ onBack }) {
   const renameDNode       = useStore((s) => s.renameDNode);
   const removeDNodeMindmap = useStore((s) => s.removeDNodeMindmap);
 
-  // Find the node record for a D-node mindmap (needed for rename/delete)
-  const nodeRecordForMindmap = (mindmapId) =>
-    dNodes.find((d) => d.mind_map_id === mindmapId);
+  // ── Filter D-nodes to only those referencing mindmaps/notes in this canvas ──
+  const filteredDNodes = useMemo(() => {
+    // Collect all valid source IDs for this canvas (mindmaps and notes)
+    const canvasObjectIds = new Set([
+      ...mindmaps.map((m) => m.mindmap_id),
+      ...notes.map((n) => n.note_id)
+    ]);
+
+    return dNodes.filter((node) => {
+      // 1. If it directly belongs to this canvas (canvas_id matches)
+      if (node.canvas_id === activeCanvasId) return true;
+
+      // 2. Otherwise, check if it references an object in this canvas
+      if (!node.source_id) return false;
+      return canvasObjectIds.has(node.source_id);
+    });
+  }, [dNodes, mindmaps, notes, activeCanvasId]);
+
+  // Handler for selecting a D-node from the sidebar
+  const handleSelectDNode = (node) => {
+    if (node.source_type === "note" && node.source_id) {
+      selectNote(node.source_id);
+    } else if (node.mind_map_id) {
+      selectDNodeMindMap(node.mind_map_id);
+    }
+  };
+
 
   return (
     <aside className={styles.root}>
@@ -178,24 +202,22 @@ export default function Sidebar({ onBack }) {
               {/* No add button here — D-nodes are created from the canvas */}
             </div>
             <div className={styles.list}>
-              {dNodeMindMaps.length === 0 && (
+              {filteredDNodes.length === 0 && (
                 <p className={styles.empty}>No D-nodes yet</p>
               )}
-              {dNodeMindMaps.map((mm) => {
-                const nodeRec = nodeRecordForMindmap(mm.mindmap_id);
+              {filteredDNodes.map((node) => {
+                const isActive = (node.source_type === "note" && activeNoteId === node.source_id) ||
+                                (node.source_type === "mindmap" && activeMindMapId === node.mind_map_id);
+
                 return (
                   <ExplorerItem
-                    key={mm.mindmap_id}
-                    label={mm.mindmap_name}
+                    key={node.node_id}
+                    label={node.name}
                     badge="D"
-                    isActive={activeMindMapId === mm.mindmap_id}
-                    onSelect={() => selectDNodeMindMap(mm.mindmap_id)}
-                    onRename={(name) => {
-                      if (nodeRec) renameDNode(nodeRec.node_id, name);
-                    }}
-                    onDelete={() => {
-                      if (nodeRec) removeDNodeMindmap(nodeRec.node_id);
-                    }}
+                    isActive={isActive}
+                    onSelect={() => handleSelectDNode(node)}
+                    onRename={(name) => renameDNode(node.node_id, name)}
+                    onDelete={() => removeDNodeMindmap(node.node_id)}
                   />
                 );
               })}

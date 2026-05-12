@@ -63,13 +63,16 @@ const EllipseNode = ({ data, id, selected }) => {
           className="flex flex-col gap-2 bg-gray-900 p-2 shadow-xl rounded-lg border border-gray-700"
         >
           <div className="flex gap-2">
-            {/* <button
-              onClick={() => data.enterPortal(id, label)}
+            <button
+              onClick={() => {
+                console.log("[StorySmith] Create Portal clicked for node:", id);
+                data.onPromoteToDNode?.(id, label);
+              }}
               className="p-1 rounded text-xs nodrag text-indigo-400 hover:bg-gray-500/20 font-bold"
-              title="Create/Enter Portal"
+              title="Create Portal (Promote to D-Node)"
             >
-              {isPortal ? "👁️" : "➕"}
-            </button> */}
+              ➕
+            </button>
 
             <button
               onClick={() => data.onDelete(id)}
