@@ -55,11 +55,56 @@ const useStore = create((set, get) => ({
   dNodeMindMaps:   [],       // all D-node mindmaps (is_dnode: true)
   dnodePanelOpen:  false,    // D-node picker panel visibility
 
+  // ─── Navigation (Breadcrumbs) ─────────────────────────────────────────────
+  navigationPath:  [],       // array of { id, name, type: "note" | "mindmap" }
+
   // ─── Workspace view ──────────────────────────────────────────────────────
   activeView:      "note",   // "note" | "mindmap"
 
   // ─── Theme ───────────────────────────────────────────────────────────────
   theme:           "default",
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // NAVIGATION (BREADCRUMBS)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * _navigateTo — internal helper to handle the common logic of switching view
+   * and updating the breadcrumb trail.
+   * mode: "reset" | "append" | "truncate"
+   */
+  _navigateTo: (id, name, type, mode = "reset") => {
+    set((s) => {
+      let newPath;
+      if (mode === "reset") {
+        newPath = [{ id, name, type }];
+      } else if (mode === "append") {
+        newPath = [...s.navigationPath, { id, name, type }];
+      } else if (mode === "truncate") {
+        const idx = s.navigationPath.findIndex((p) => p.id === id);
+        newPath = idx !== -1 ? s.navigationPath.slice(0, idx + 1) : s.navigationPath;
+      } else {
+        newPath = s.navigationPath;
+      }
+
+      const updates = {
+        activeView: type === "note" ? "note" : "mindmap",
+        navigationPath: newPath,
+      };
+
+      if (type === "note")    updates.activeNoteId = id;
+      if (type === "mindmap") updates.activeMindMapId = id;
+
+      return updates;
+    });
+  },
+
+  jumpToPathIndex: (index) => {
+    const { navigationPath } = get();
+    const target = navigationPath[index];
+    if (!target) return;
+    get()._navigateTo(target.id, target.name, target.type, "truncate");
+  },
 
   // ───────────────────────────────────────────────────────────────────────────
   // CANVAS ACTIONS
@@ -79,6 +124,7 @@ const useStore = create((set, get) => ({
       mindmaps:        [],
       activeNoteId:    null,
       activeMindMapId: null,
+      navigationPath:  [],
     }));
     return canvas;
   },
@@ -88,14 +134,20 @@ const useStore = create((set, get) => ({
       getNotesForCanvas(id),
       getMindMapsForCanvas(id),
     ]);
+
     set({
       activeCanvasId:  id,
       notes,
       mindmaps,
-      activeNoteId:    notes[0]?.note_id    || null,
-      activeMindMapId: mindmaps[0]?.mindmap_id || null,
-      activeView: notes.length > 0 ? "note" : "mindmap",
+      navigationPath:  [], // cleared, will be set by selectNote/selectMindMap below
     });
+
+    // Default to the first note or mindmap
+    if (notes.length > 0) {
+      get().selectNote(notes[0].note_id, "reset");
+    } else if (mindmaps.length > 0) {
+      get().selectMindMap(mindmaps[0].mindmap_id, "reset");
+    }
   },
 
   renameCanvas: async (id, name) => {
@@ -116,6 +168,7 @@ const useStore = create((set, get) => ({
         mindmaps:        [],
         activeNoteId:    null,
         activeMindMapId: null,
+        navigationPath:  [],
       };
     });
     const newId = get().activeCanvasId;
@@ -132,29 +185,46 @@ const useStore = create((set, get) => ({
     const note = await createNote(activeCanvasId, name);
     set((s) => ({
       notes:        [note, ...s.notes],
+      allNotes:     [note, ...s.allNotes],
       activeNoteId: note.note_id,
       activeView:   "note",
+      navigationPath: [{ id: note.note_id, name: note.note_name, type: "note" }],
     }));
     return note;
   },
 
-  selectNote: (noteId) => set({ activeNoteId: noteId, activeView: "note" }),
+  selectNote: (noteId, mode = "reset") => {
+    const s = get();
+    const note = s.allNotes.find((n) => n.note_id === noteId) ||
+                 s.notes.find((n) => n.note_id === noteId);
+    get()._navigateTo(noteId, note?.note_name || "Note", "note", mode);
+  },
 
   persistNote: async (noteId, tiptapJson, name) => {
     await saveNote(noteId, tiptapJson, name);
     const ts = new Date().toISOString();
-    set((s) => ({
-      notes: s.notes.map((n) =>
+    set((s) => {
+      const updatedNotes = s.notes.map((n) =>
         n.note_id === noteId
           ? { ...n, essence: tiptapJson, note_name: name ?? n.note_name, date_last_modified: ts }
           : n
-      ),
-      allNotes: s.allNotes.map((n) =>
+      );
+      const updatedAllNotes = s.allNotes.map((n) =>
         n.note_id === noteId
           ? { ...n, essence: tiptapJson, note_name: name ?? n.note_name, date_last_modified: ts }
           : n
-      ),
-    }));
+      );
+      // Also update breadcrumb name if it matches
+      const updatedPath = s.navigationPath.map((p) =>
+        p.id === noteId ? { ...p, name: name ?? p.name } : p
+      );
+      
+      return {
+        notes: updatedNotes,
+        allNotes: updatedAllNotes,
+        navigationPath: updatedPath,
+      };
+    });
   },
 
   removeNote: async (noteId) => {
@@ -162,7 +232,13 @@ const useStore = create((set, get) => ({
     set((s) => {
       const notes = s.notes.filter((n) => n.note_id !== noteId);
       const allNotes = s.allNotes.filter((n) => n.note_id !== noteId);
-      return { notes, allNotes, activeNoteId: notes[0]?.note_id || null };
+      const navigationPath = s.navigationPath.filter((p) => p.id !== noteId);
+      return { 
+        notes, 
+        allNotes, 
+        navigationPath,
+        activeNoteId: notes[0]?.note_id || null 
+      };
     });
   },
 
@@ -179,35 +255,49 @@ const useStore = create((set, get) => ({
       allMindmaps:     [mm, ...s.allMindmaps],
       activeMindMapId: mm.mindmap_id,
       activeView:      "mindmap",
+      navigationPath:  [{ id: mm.mindmap_id, name: mm.mindmap_name, type: "mindmap" }],
     }));
     return mm;
   },
 
-  selectMindMap: (mindmapId) => {
-    set({ activeMindMapId: mindmapId, activeView: "mindmap" });
+  selectMindMap: (mindmapId, mode = "reset") => {
+    const s = get();
+    const mm = s.allMindmaps.find((m) => m.mindmap_id === mindmapId) ||
+               s.mindmaps.find((m) => m.mindmap_id === mindmapId);
+    get()._navigateTo(mindmapId, mm?.mindmap_name || "MindMap", "mindmap", mode);
   },
 
   persistMindMap: async (mindmapId, rfJson, name) => {
     await saveMindMap(mindmapId, rfJson, name);
     const ts = new Date().toISOString();
-    set((s) => ({
-      mindmaps: s.mindmaps.map((m) =>
+    set((s) => {
+      const updatedMM = s.mindmaps.map((m) =>
         m.mindmap_id === mindmapId
           ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
           : m
-      ),
-      allMindmaps: s.allMindmaps.map((m) =>
+      );
+      const updatedAllMM = s.allMindmaps.map((m) =>
         m.mindmap_id === mindmapId
           ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
           : m
-      ),
-      // Also update dNodeMindMaps if this is a D-node mindmap
-      dNodeMindMaps: s.dNodeMindMaps.map((m) =>
+      );
+      const updatedDNodeMM = s.dNodeMindMaps.map((m) =>
         m.mindmap_id === mindmapId
           ? { ...m, essence: rfJson, mindmap_name: name ?? m.mindmap_name, date_last_modified: ts }
           : m
-      ),
-    }));
+      );
+      // Also update breadcrumb name if it matches
+      const updatedPath = s.navigationPath.map((p) =>
+        p.id === mindmapId ? { ...p, name: name ?? p.name } : p
+      );
+
+      return {
+        mindmaps: updatedMM,
+        allMindmaps: updatedAllMM,
+        dNodeMindMaps: updatedDNodeMM,
+        navigationPath: updatedPath,
+      };
+    });
   },
 
   removeMindMap: async (mindmapId) => {
@@ -215,7 +305,13 @@ const useStore = create((set, get) => ({
     set((s) => {
       const mindmaps = s.mindmaps.filter((m) => m.mindmap_id !== mindmapId);
       const allMindmaps = s.allMindmaps.filter((m) => m.mindmap_id !== mindmapId);
-      return { mindmaps, allMindmaps, activeMindMapId: mindmaps[0]?.mindmap_id || null };
+      const navigationPath = s.navigationPath.filter((p) => p.id !== mindmapId);
+      return { 
+        mindmaps, 
+        allMindmaps, 
+        navigationPath,
+        activeMindMapId: mindmaps[0]?.mindmap_id || null 
+      };
     });
   },
 
@@ -359,8 +455,10 @@ const useStore = create((set, get) => ({
    * The D-node mindmap is loaded from the dNodeMindMaps array
    * (not the regular mindmaps array) since it's canvas-independent.
    */
-  selectDNodeMindMap: (mindmapId) => {
-    set({ activeMindMapId: mindmapId, activeView: "mindmap" });
+  selectDNodeMindMap: (mindmapId, mode = "append") => {
+    const s = get();
+    const mm = s.dNodeMindMaps.find((m) => m.mindmap_id === mindmapId);
+    get()._navigateTo(mindmapId, mm?.mindmap_name || "D-Node", "mindmap", mode);
   },
 
   // ── D-node panel ──────────────────────────────────────────────────────────

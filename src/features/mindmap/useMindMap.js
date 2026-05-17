@@ -166,9 +166,9 @@ export function useMindMap() {
     const nodeRec = dNodes.find((d) => d.node_id === dnodeNodeId);
     
     if (nodeRec?.source_type === "note" && nodeRec.source_id) {
-      selectNote(nodeRec.source_id);
+      selectNote(nodeRec.source_id, "append");
     } else if (nodeRec?.mind_map_id) {
-      selectDNodeMindMap(nodeRec.mind_map_id);
+      selectDNodeMindMap(nodeRec.mind_map_id, "append");
     }
   }, [selectNote, selectDNodeMindMap]);
 

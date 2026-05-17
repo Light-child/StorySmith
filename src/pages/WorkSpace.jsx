@@ -17,6 +17,7 @@ import Sidebar from "../features/explorer/Sidebar";
 import NoteEditor from "../features/editor/NoteEditor";
 import MindMapView from "../features/mindmap/MindMapView";
 import ActionDock from "../components/ActionDock";
+import Breadcrumbs from "../components/Breadcrumbs";
 
 import styles from "./WorkSpace.module.css";
 
@@ -49,6 +50,7 @@ export default function WorkSpace() {
 
       {/* ── Centre: Main View (Note editor OR MindMap) ────────────────── */}
       <main className={styles.content}>
+        <Breadcrumbs />
         {activeView === "note" ? (
           /* The rich text editor, powered by TipTap */
           <NoteEditor />

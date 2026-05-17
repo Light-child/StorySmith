@@ -95,15 +95,6 @@ function MindMapCanvas() {
   return (
     <div className={styles.root}>
 
-      {/* Header: map name + D-node indicator + unsaved dot */}
-      <div className={styles.header}>
-        <span className={styles.mapName}>{activeMindMap?.mindmap_name}</span>
-        {isDNodeMindMap && (
-          <span className={styles.dnodeBadge}>D-NODE MINDMAP</span>
-        )}
-        {isDirty && <span className={styles.unsaved}>● unsaved</span>}
-      </div>
-
       {/* Canvas + optional D-node panel */}
       <div className={styles.canvasRow}>
 

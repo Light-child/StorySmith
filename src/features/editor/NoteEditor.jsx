@@ -127,9 +127,6 @@ export default function NoteEditor() {
           <ToolbarBtn label="1. List"action={() => editor.chain().focus().toggleOrderedList().run()}           isActive={editor.isActive("orderedList")} />
           <ToolbarBtn label="Code"   action={() => editor.chain().focus().toggleCodeBlock().run()}             isActive={editor.isActive("codeBlock")} />
           <ToolbarBtn label="— Rule" action={() => editor.chain().focus().setHorizontalRule().run()}           isActive={false} />
-
-          {/* Note name — right side of toolbar */}
-          <span className={styles.noteTitle}>{activeNote?.note_name}</span>
         </div>
       )}
 

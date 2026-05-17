@@ -118,9 +118,9 @@ export default function Sidebar({ onBack }) {
   // Handler for selecting a D-node from the sidebar
   const handleSelectDNode = (node) => {
     if (node.source_type === "note" && node.source_id) {
-      selectNote(node.source_id);
+      selectNote(node.source_id, "reset");
     } else if (node.mind_map_id) {
-      selectDNodeMindMap(node.mind_map_id);
+      selectDNodeMindMap(node.mind_map_id, "reset");
     }
   };
 
