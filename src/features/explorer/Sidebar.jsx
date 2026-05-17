@@ -66,6 +66,9 @@ function ExplorerItem({ label, isActive, onSelect, onRename, onDelete, badge }) 
 
 // ─── Main Sidebar ─────────────────────────────────────────────────────────────
 export default function Sidebar({ onBack }) {
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Canvas
   const canvases       = useStore((s) => s.canvases);
   const activeCanvasId = useStore((s) => s.activeCanvasId);
@@ -97,23 +100,21 @@ export default function Sidebar({ onBack }) {
   const renameDNode       = useStore((s) => s.renameDNode);
   const removeDNodeMindmap = useStore((s) => s.removeDNodeMindmap);
 
-  // ── Filter D-nodes to only those referencing mindmaps/notes in this canvas ──
-  const filteredDNodes = useMemo(() => {
-    // Collect all valid source IDs for this canvas (mindmaps and notes)
-    const canvasObjectIds = new Set([
-      ...mindmaps.map((m) => m.mindmap_id),
-      ...notes.map((n) => n.note_id)
-    ]);
+  // ── Search & Filter Logic ──────────────────────────────────────────────────
+  const query = searchQuery.toLowerCase().trim();
 
-    return dNodes.filter((node) => {
-      // 1. If it directly belongs to this canvas (canvas_id matches)
-      if (node.canvas_id === activeCanvasId) return true;
+  const filteredNotes = notes.filter(n => 
+    n.note_name.toLowerCase().includes(query)
+  );
 
-      // 2. Otherwise, check if it references an object in this canvas
-      if (!node.source_id) return false;
-      return canvasObjectIds.has(node.source_id);
-    });
-  }, [dNodes, mindmaps, notes, activeCanvasId]);
+  const filteredMindmaps = mindmaps.filter(m => 
+    m.mindmap_name.toLowerCase().includes(query)
+  );
+
+  // Show ALL D-nodes globally in the sidebar, or filter them by query
+  const filteredDNodes = dNodes.filter(node => 
+    node.name.toLowerCase().includes(query)
+  );
 
   // Handler for selecting a D-node from the sidebar
   const handleSelectDNode = (node) => {
@@ -129,8 +130,24 @@ export default function Sidebar({ onBack }) {
     <aside className={styles.root}>
       <div className={styles.glowStrip} />
 
-      {/* ── Back ─────────────────────────────────────────────────────── */}
-      <button className={styles.backBtn} onClick={onBack}>← Collection</button>
+      {/* ── Top Header ─────────────────────────────────────────────────── */}
+      <div className={styles.sidebarHeader}>
+        <button className={styles.backBtn} onClick={onBack}>← Collection</button>
+
+        {/* Sidebar Search */}
+        <div className={styles.searchWrapper}>
+          <input 
+            type="text" 
+            className={styles.sidebarSearch}
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className={styles.clearSearch} onClick={() => setSearchQuery("")}>✕</button>
+          )}
+        </div>
+      </div>
 
       {/* ── Canvas title ─────────────────────────────────────────────── */}
       <div className={styles.canvasTitle}>
@@ -153,8 +170,8 @@ export default function Sidebar({ onBack }) {
             <button className={styles.addBtn} onClick={() => addNote("Untitled Note")} title="New note">＋</button>
           </div>
           <div className={styles.list}>
-            {notes.length === 0 && <p className={styles.empty}>No notes yet</p>}
-            {notes.map((note) => (
+            {filteredNotes.length === 0 && <p className={styles.empty}>No notes found</p>}
+            {filteredNotes.map((note) => (
               <ExplorerItem
                 key={note.note_id}
                 label={note.note_name}
@@ -182,8 +199,8 @@ export default function Sidebar({ onBack }) {
               <button className={styles.addBtn} onClick={() => addMindMap("Untitled MindMap")} title="New mind map">＋</button>
             </div>
             <div className={styles.list}>
-              {mindmaps.length === 0 && <p className={styles.empty}>No mind maps yet</p>}
-              {mindmaps.map((mm) => (
+              {filteredMindmaps.length === 0 && <p className={styles.empty}>No mind maps found</p>}
+              {filteredMindmaps.map((mm) => (
                 <ExplorerItem
                   key={mm.mindmap_id}
                   label={mm.mindmap_name}
@@ -211,7 +228,7 @@ export default function Sidebar({ onBack }) {
             </div>
             <div className={styles.list}>
               {filteredDNodes.length === 0 && (
-                <p className={styles.empty}>No D-nodes yet</p>
+                <p className={styles.empty}>No D-nodes found</p>
               )}
               {filteredDNodes.map((node) => {
                 const isActive = (node.source_type === "note" && activeNoteId === node.source_id) ||
