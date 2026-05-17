@@ -102,6 +102,14 @@ export default function HomePage() {
     navigate(`/workspace/${canvas.id}`);
   };
 
+  const handleRemoveCanvas = (id) => {
+    const canvas = canvases.find((c) => c.id === id);
+    const name = canvas?.name || "this canvas";
+    if (window.confirm(`Are you sure you want to permanently delete "${name}" and ALL its notes and mind maps? This cannot be undone.`)) {
+      removeCanvas(id);
+    }
+  };
+
   // Filter canvases by search query
   const filtered = canvases.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -168,7 +176,7 @@ export default function HomePage() {
               key={canvas.id}
               canvas={canvas}
               onClick={() => handleOpen(canvas)}
-              onDelete={removeCanvas}
+              onDelete={handleRemoveCanvas}
             />
           ))}
 

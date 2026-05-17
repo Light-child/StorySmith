@@ -161,7 +161,11 @@ export default function Sidebar({ onBack }) {
                 isActive={activeNoteId === note.note_id}
                 onSelect={() => selectNote(note.note_id)}
                 onRename={(name) => persistNote(note.note_id, note.essence ?? {}, name)}
-                onDelete={() => removeNote(note.note_id)}
+                onDelete={() => {
+                  if (window.confirm(`Are you sure you want to permanently delete the note "${note.note_name}"? This cannot be undone.`)) {
+                    removeNote(note.note_id);
+                  }
+                }}
               />
             ))}
           </div>
@@ -186,7 +190,11 @@ export default function Sidebar({ onBack }) {
                   isActive={activeMindMapId === mm.mindmap_id}
                   onSelect={() => selectMindMap(mm.mindmap_id)}
                   onRename={(name) => persistMindMap(mm.mindmap_id, mm.essence ?? { nodes: [], edges: [] }, name)}
-                  onDelete={() => removeMindMap(mm.mindmap_id)}
+                  onDelete={() => {
+                    if (window.confirm(`Are you sure you want to permanently delete the mind map "${mm.mindmap_name}"? This cannot be undone.`)) {
+                      removeMindMap(mm.mindmap_id);
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -217,7 +225,11 @@ export default function Sidebar({ onBack }) {
                     isActive={isActive}
                     onSelect={() => handleSelectDNode(node)}
                     onRename={(name) => renameDNode(node.node_id, name)}
-                    onDelete={() => removeDNodeMindmap(node.node_id)}
+                    onDelete={() => {
+                      if (window.confirm(`Are you sure you want to permanently delete the D-node "${node.name}" and its associated mind map? This cannot be undone.`)) {
+                        removeDNodeMindmap(node.node_id);
+                      }
+                    }}
                   />
                 );
               })}
